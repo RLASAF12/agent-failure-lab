@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SpinLock — Agent Failure Series #12</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#090910;--panel:#0f0f1a;--border:#1e1e30;
+  --green:#00e676;--yellow:#ffd600;--orange:#ff6d00;--red:#ff1744;
+  --dim:#4a4a6a;--text:#c8c8e8;--mono:'Courier New',Courier,monospace;
+  --critical-glow: 0 0 20px #ff174480;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--mono);min-height:100vh;overflow-x:hidden}
+
+/* HEADER */
+.series-badge{display:flex;align-items:center;gap:10px;padding:14px 24px;background:#0f0f1a;border-bottom:1px solid var(--border)}
+.badge-pill{font-size:10px;font-weight:700;letter-spacing:1.5px;padding:3px 8px;border-radius:2px;background:#1a1a2e;border:1px solid var(--dim);color:var(--dim)}
+.badge-pill.red{border-color:var(--red);color:var(--red)}
+.series-title{font-size:11px;color:var(--dim)}
+.header-main{padding:24px 24px 16px;border-bottom:1px solid var(--border)}
+.header-main h1{font-size:28px;font-weight:700;color:#fff;letter-spacing:-0.5px}
+.header-main h1 span{color:var(--red)}
+.header-main p{margin-top:8px;font-size:13px;color:var(--dim);max-width:680px;line-height:1.5}
+
+/* SCENARIO TABS */
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--border);padding:0 24px;overflow-x:auto}
+.tab{padding:10px 20px;font-size:11px;letter-spacing:0.8px;font-family:var(--mono);cursor:pointer;border:none;background:none;color:var(--dim);border-bottom:2px solid transparent;transition:all 0.2s;white-space:nowrap}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--green);border-bottom-color:var(--green)}
+
+/* MAIN GRID */
+.main-grid{display:grid;grid-template-columns:1fr 280px 260px;gap:0;height:calc(100vh - 200px);min-height:480px}
+.panel{border-right:1px solid var(--border);overflow:hidden;display:flex;flex-direction:column}
+.panel-hdr{padding:12px 16px;border-bottom:1px solid var(--border);font-size:10px;letter-spacing:1.5px;color:var(--dim);display:flex;align-items:center;gap:8px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--dim)}
+.dot.green{background:var(--green);box-shadow:0 0 6px var(--green)}
+.dot.red{background:var(--red);box-shadow:0 0 6px var(--red);animation:blink 0.8s infinite}
+.dot.yellow{background:var(--yellow)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0.3}}
+
+/* LOG PANEL */
+.log-scroll{flex:1;overflow-y:auto;padding:0;scrollbar-width:thin;scrollbar-color:var(--border) transparent}
+.log-entry{padding:6px 16px;font-size:11px;line-height:1.5;border-bottom:1px solid #0d0d18;animation:fadeIn 0.15s ease}
+@keyframes fadeIn{from{opacity:0;background:#1a1a30}to{opacity:1;background:transparent}}
+.log-entry .ts{color:var(--dim);margin-right:8px;font-size:10px}
+.log-entry .tool{color:#7c7cff;margin-right:6px}
+.log-entry .msg{color:var(--text)}
+.log-entry.warn .msg{color:var(--yellow)}
+.log-entry.error .msg{color:var(--orange)}
+.log-entry.critical .msg{color:var(--red);font-weight:bold}
+.log-entry.system .msg{color:var(--dim);font-style:italic}
+.loop-marker{padding:4px 16px;font-size:10px;background:#1a0a0a;color:var(--red);letter-spacing:1px;border-left:2px solid var(--red)}
+
+/* METRICS PANEL */
+.metrics{flex:1;padding:16px;display:flex;flex-direction:column;gap:16px}
+.metric-block{background:#0d0d18;border:1px solid var(--border);border-radius:4px;padding:14px}
+.metric-label{font-size:9px;letter-spacing:1.5px;color:var(--dim);margin-bottom:6px}
+.metric-value{font-size:26px;font-weight:700;letter-spacing:-0.5px;transition:color 0.3s}
+.metric-value.normal{color:var(--green)}
+.metric-value.warning{color:var(--yellow)}
+.metric-value.danger{color:var(--orange)}
+.metric-value.critical{color:var(--red);animation:pulse-red 0.6s infinite}
+@keyframes pulse-red{0%,100%{text-shadow:0 0 10px var(--red)}50%{text-shadow:0 0 30px var(--red),0 0 60px #ff174450}}
+.metric-sub{font-size:10px;color:var(--dim);margin-top:4px}
+
+/* LOOP RING */
+.ring-container{display:flex;justify-content:center;padding:4px}
+.ring{width:80px;height:80px;border-radius:50%;border:3px solid var(--border);border-top-color:var(--green);animation:spin 1s linear infinite;transition:border-top-color 0.3s}
+.ring.warn{border-top-color:var(--yellow);animation-duration:0.6s}
+.ring.crit{border-top-color:var(--red);animation-duration:0.3s}
+.ring.stopped{animation:none;border-top-color:var(--dim)}
+@keyframes spin{to{transform:rotate(360deg)}}
+.ring-label{text-align:center;font-size:10px;color:var(--dim);margin-top:6px}
+
+/* STATUS BADGE */
+.status-badge{text-align:center;padding:8px;border-radius:4px;font-size:11px;letter-spacing:1px;font-weight:bold;transition:all 0.3s}
+.status-badge.running{background:#00e67615;border:1px solid var(--green);color:var(--green)}
+.status-badge.stopping{background:#ffd60015;border:1px solid var(--yellow);color:var(--yellow)}
+.status-badge.critical{background:#ff174415;border:1px solid var(--red);color:var(--red)}
+.status-badge.broken{background:#7c7cff15;border:1px solid #7c7cff;color:#7c7cff}
+
+/* CONTROL PANEL */
+.controls{flex:1;padding:16px;display:flex;flex-direction:column;gap:12px}
+.btn{width:100%;padding:12px;font-family:var(--mono);font-size:11px;letter-spacing:0.8px;cursor:pointer;border-radius:3px;transition:all 0.15s;font-weight:bold}
+.btn-stop{background:#ff174420;border:1px solid var(--red);color:var(--red)}
+.btn-stop:hover:not(:disabled){background:#ff174440}
+.btn-stop:disabled{opacity:0.3;cursor:not-allowed}
+.btn-cb{background:#7c7cff20;border:1px solid #7c7cff;color:#7c7cff}
+.btn-cb:hover:not(:disabled){background:#7c7cff40}
+.btn-cb:disabled{opacity:0.3;cursor:not-allowed}
+.btn-reset{background:#1a1a2e;border:1px solid var(--border);color:var(--dim);font-size:10px}
+.btn-reset:hover{border-color:var(--dim)}
+.stop-feedback{display:none;background:#1a0a0a;border:1px solid var(--red);border-radius:3px;padding:10px;font-size:10px;color:var(--orange);line-height:1.5}
+.stop-feedback.show{display:block}
+.code-fix{display:none;background:#0d1a0d;border:1px solid var(--green);border-radius:3px;padding:12px;font-size:10px;color:var(--green);line-height:1.7}
+.code-fix.show{display:block}
+.code-fix h4{color:#fff;margin-bottom:8px;font-size:10px;letter-spacing:1px}
+.code-fix code{color:var(--green)}
+.signals-box{margin-top:4px;background:#0d0d18;border:1px solid var(--border);border-radius:3px;padding:10px;font-size:10px;color:var(--dim);line-height:1.7}
+.signals-box strong{color:var(--text);display:block;margin-bottom:4px}
+.signals-box a{color:#7c7cff;text-decoration:none}
+.signals-box a:hover{text-decoration:underline}
+
+/* POSTMORTEM */
+.postmortem{display:none;background:#0a0a14;border-top:2px solid #7c7cff;padding:20px 24px}
+.postmortem.show{display:block}
+.postmortem h3{font-size:12px;letter-spacing:2px;color:#7c7cff;margin-bottom:16px}
+.pm-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.pm-card{background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:14px}
+.pm-card h4{font-size:9px;letter-spacing:1.5px;color:var(--dim);margin-bottom:8px}
+.pm-card p{font-size:12px;color:var(--text);line-height:1.6}
+.pm-card code{font-size:11px;color:var(--green);display:block;margin-top:4px}
+@media(max-width:900px){.main-grid{grid-template-columns:1fr 1fr};.panel:last-child{grid-column:1/-1}}
+</style>
+</head>
+<body>
+
+<div class="series-badge">
+  <span class="badge-pill red">AGENT FAILURE SERIES</span>
+  <span class="badge-pill">#12 of ∞</span>
+  <span class="series-title">spinlock — the loop your STOP button can't end</span>
+</div>
+
+<div class="header-main">
+  <h1><span>SpinLock</span> — Infinite Loop Detector</h1>
+  <p>An AI agent enters a loop. It calls the same tool. Gets the same error. "Corrects" itself. Calls the tool again.
+  You hit STOP. Nothing happens. The API bill climbs. This is the production failure nobody demos — because watching it happen is the whole lesson.</p>
+</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="selectScenario('writeloop')">① Write Loop</button>
+  <button class="tab" onclick="selectScenario('pingpong')">② Agent Ping-Pong</button>
+  <button class="tab" onclick="selectScenario('retrydeath')">③ Retry Death Spiral</button>
+  <button class="tab" onclick="selectScenario('completionblind')">④ Completion Blindness</button>
+</div>
+
+<div class="main-grid">
+  <!-- LOG PANEL -->
+  <div class="panel">
+    <div class="panel-hdr">
+      <div class="dot green" id="log-dot"></div>
+      AGENT EXECUTION LOG
+      <span style="margin-left:auto;font-size:10px" id="log-count">0 actions</span>
+    </div>
+    <div class="log-scroll" id="log-scroll"></div>
+  </div>
+
+  <!-- METRICS PANEL -->
+  <div class="panel">
+    <div class="panel-hdr">
+      <div class="dot yellow"></div>
+      LIVE METRICS
+    </div>
+    <div class="metrics">
+      <div class="ring-container"><div><div class="ring" id="ring"></div><div class="ring-label" id="ring-label">SPINNING</div></div></div>
+
+      <div class="metric-block">
+        <div class="metric-label">LOOP ITERATIONS</div>
+        <div class="metric-value normal" id="m-iter">0</div>
+        <div class="metric-sub" id="m-iter-sub">task not complete</div>
+      </div>
+
+      <div class="metric-block">
+        <div class="metric-label">ESTIMATED API COST</div>
+        <div class="metric-value normal" id="m-cost">$0.0000</div>
+        <div class="metric-sub" id="m-cost-sub">per token: $0.000003</div>
+      </div>
+
+      <div class="metric-block">
+        <div class="metric-label">TOKENS CONSUMED</div>
+        <div class="metric-value normal" id="m-tokens">0</div>
+      </div>
+
+      <div class="status-badge running" id="status-badge">⟳ RUNNING</div>
+    </div>
+  </div>
+
+  <!-- CONTROL PANEL -->
+  <div class="panel" style="border-right:none">
+    <div class="panel-hdr">
+      <div class="dot red" id="ctrl-dot"></div>
+      DEVELOPER CONTROLS
+    </div>
+    <div class="controls">
+      <button class="btn btn-stop" id="btn-stop" onclick="attemptStop()">⏹ SEND STOP SIGNAL</button>
+      <div class="stop-feedback" id="stop-feedback"></div>
+
+      <button class="btn btn-cb" id="btn-cb" onclick="injectCircuitBreaker()">⚡ INJECT CIRCUIT BREAKER</button>
+      <div class="code-fix" id="code-fix">
+        <h4>CIRCUIT BREAKER INJECTED</h4>
+        <code id="fix-code"></code>
+      </div>
+
+      <button class="btn btn-reset" onclick="resetSim()">↺ RESET / CHANGE SCENARIO</button>
+
+      <div class="signals-box">
+        <strong>REAL PAIN SIGNALS</strong>
+        <a href="https://dev.to/debashish_ghosal/preventing-the-agent-death-spiral-why-your-ai-agents-need-a-circuit-breaker-9h7" target="_blank">↗ "ran 6h on a 2-min task, cost $200" (Jul 11)</a><br>
+        <a href="https://dev.to/shahdinsalman/why-your-multi-agent-ai-system-keeps-getting-stuck-in-infinite-loops-and-how-we-fixed-it-4ek1" target="_blank">↗ "drains API budget in 10 minutes" (Jul 24)</a><br>
+        <a href="https://vorawire.com/ai-agent-stuck-in-an-infinite-loop-heres-how-to-stop-it-and-the-bill/" target="_blank">↗ "$4 figures overnight from infinite loop" (Jul 3)</a><br>
+        <a href="https://dev.to/mrclaw207/why-your-ai-agent-keeps-making-the-same-mistake-and-how-loop-detection-fixes-it-17gl" target="_blank">↗ "wrote the same file six times in a row" (Jul 20)</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- POSTMORTEM -->
+<div class="postmortem" id="postmortem">
+  <h3>// POSTMORTEM</h3>
+  <div class="pm-grid">
+    <div class="pm-card">
+      <h4>ROOT CAUSE</h4>
+      <p id="pm-cause"></p>
+    </div>
+    <div class="pm-card">
+      <h4>WHY STOP DIDN'T WORK</h4>
+      <p>The STOP signal was sent to the orchestrator's event queue — but the agent was mid-iteration and the loop had no checkpoint. It processed STOP as <em>input</em>, reasoned "not done yet", and continued.</p>
+    </div>
+    <div class="pm-card">
+      <h4>THE FIX (3 lines)</h4>
+      <code id="pm-fix"></code>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── SCENARIO DEFINITIONS ──────────────────────────────────────────────────────
+const SCENARIOS = {
+  writeloop: {
+    name: "The Write Loop",
+    costPerIter: 0.0031,
+    tokensPerIter: 1040,
+    cause: "The agent's error correction logic produced two alternating paths. Each path was 'valid' but triggered the same permission error. The done-check only looked at exit code, not semantic outcome — so it looped forever.",
+    fix: `max_retries = 5
+if seen_error_before(err): break
+if iterations > max_iters: raise LoopDetectedError`,
+    fixCode: `# Add to agent loop:\nif error_hash in seen_errors:\n    raise CircuitBreaker("duplicate error")\nseen_errors.add(error_hash)\nif iterations > MAX_ITERS:\n    raise CircuitBreaker("limit reached")`,
+    logs: [
+      [0,'normal','executor','write_file','Writing output to /workspace/report.csv...'],
+      [600,'error','executor','write_file','PermissionError: /workspace/report.csv — read-only mount'],
+      [650,'normal','planner','reason','Analyzing error. The path may be incorrect. Correcting...'],
+      [1100,'normal','executor','write_file','Retrying at /tmp/workspace/report.csv...'],
+      [1700,'error','executor','write_file','PermissionError: /tmp/workspace/report.csv — read-only mount'],
+      [1750,'normal','planner','reason','Path was wrong again. The issue may be permissions. Let me try the original path with sudo flag...'],
+      [2200,'normal','executor','write_file','Retrying at /workspace/report.csv (mode=0o777)...'],
+    ],
+    loopPattern: [
+      {type:'error', tool:'write_file', template:(i)=>`PermissionError: path attempt ${i} — access denied`},
+      {type:'normal', tool:'reason', template:(i)=>`Iteration ${i}: Error was path-related. Adjusting and retrying...`},
+      {type:'normal', tool:'write_file', template:(i)=>`Attempting corrected path (iteration ${i})...`},
+    ]
+  },
+  pingpong: {
+    name: "Agent Ping-Pong",
+    costPerIter: 0.0071,
+    tokensPerIter: 2360,
+    cause: "The orchestrator delegated ambiguous tasks to sub-agents without a termination contract. Sub-agent B returned 'needs clarification' which the orchestrator parsed as 'delegate back'. Both agents had ROUTING=True with no cycle detection.",
+    fix: `# Each delegation must carry a TTL:\ndelegation_depth = ctx.get('depth', 0) + 1\nif delegation_depth > MAX_DEPTH: return local_answer()\nctx['depth'] = delegation_depth`,
+    fixCode: `# Prevent routing cycles:\nif target_agent in delegation_chain:\n    raise CircuitBreaker("cycle detected")\ndelegation_chain.append(target_agent)\nif len(delegation_chain) > MAX_DEPTH:\n    raise CircuitBreaker("depth limit")`,
+    logs: [
+      [0,'normal','orchestrator','delegate','Task: "Analyze the Q3 report and summarize findings." → routing to analyst-agent'],
+      [700,'normal','analyst-agent','reason','Task requires financial context I don\'t have. Routing to finance-agent...'],
+      [1400,'normal','finance-agent','reason','Task requires narrative output. Routing back to analyst-agent...'],
+      [2000,'normal','analyst-agent','reason','Still missing context. Routing to orchestrator for clarification...'],
+      [2600,'normal','orchestrator','reason','Clarification needed. Re-delegating to analyst-agent...'],
+    ],
+    loopPattern: [
+      {type:'warn', tool:'orchestrator', template:(i)=>`Cycle #${i}: orchestrator → analyst-agent (depth: ${i})`},
+      {type:'warn', tool:'analyst-agent', template:(i)=>`Routing back (cycle ${i}): needs financial context → finance-agent`},
+      {type:'error', tool:'finance-agent', template:(i)=>`Routing back (cycle ${i}): needs narrative output → analyst-agent`},
+    ]
+  },
+  retrydeath: {
+    name: "Retry Death Spiral",
+    costPerIter: 0.0018,
+    tokensPerIter: 590,
+    cause: "The external API was rate-limited and returning 429. The agent's retry logic had no exponential backoff and no jitter. Each retry happened immediately, triggering another 429. The retry count was stored as a session variable that reset on each 'new reasoning step'.",
+    fix: `import time, random\nfor attempt in range(MAX_RETRIES):\n    backoff = (2**attempt) + random.random()\n    time.sleep(min(backoff, 60))`,
+    fixCode: `# Add exponential backoff:\nif attempt > MAX_RETRIES:\n    raise CircuitBreaker("max retries exceeded")\nwait = min(2**attempt + jitter(), 60)\ntime.sleep(wait)`,
+    logs: [
+      [0,'normal','executor','api_call','POST /api/v1/data-fetch (attempt 1)'],
+      [200,'error','executor','api_call','429 Too Many Requests — retry immediately'],
+      [400,'normal','executor','api_call','POST /api/v1/data-fetch (attempt 2)'],
+      [600,'error','executor','api_call','429 Too Many Requests — retry immediately'],
+      [700,'normal','planner','reason','API is rate-limited. I\'ll retry after the rate limit clears...'],
+      [900,'normal','executor','api_call','POST /api/v1/data-fetch (attempt 3) — no delay applied'],
+      [1100,'error','executor','api_call','429 Too Many Requests — retry immediately'],
+    ],
+    loopPattern: [
+      {type:'normal', tool:'api_call', template:(i)=>`POST /api/v1/data-fetch (attempt ${i}) — no backoff`},
+      {type:'error', tool:'api_call', template:(i)=>`429 Too Many Requests (attempt ${i}) — immediate retry scheduled`},
+      {type:'warn', tool:'reason', template:(i)=>`Rate limit encountered ${i}x. I'll try one more time...`},
+    ]
+  },
+  completionblind: {
+    name: "Completion Blindness",
+    costPerIter: 0.0024,
+    tokensPerIter: 790,
+    cause: "The agent's completion check called verify_task() which returned False even after the task was done — because the verification was checking a stale cache. The agent had no secondary completion signal and no iteration limit. Task was complete after iteration 1.",
+    fix: `# Check completion before retrying:\nresult = execute_task()\nif verify_task(result, fresh=True):\n    return result  # DONE — stop here\nif iterations > MAX_ITERS:\n    log_ambiguous_completion()`,
+    fixCode: `# Force fresh completion check:\nresult = execute(task)\nif verify(result, cache=False):\n    return DONE\nif iters > MAX_ITERS:\n    raise CircuitBreaker("stale verifier")`,
+    logs: [
+      [0,'normal','executor','task_exec','Executing task: send_confirmation_email(user_id=4471)...'],
+      [800,'normal','executor','task_exec','✓ Email sent. Message-ID: msg_4471_confirmed'],
+      [850,'normal','verifier','verify_task','Checking completion status...'],
+      [1200,'error','verifier','verify_task','verify_task() → False (cache miss: last_sent=None)'],
+      [1250,'normal','planner','reason','Task not confirmed complete. Email may not have sent. Retrying...'],
+      [2000,'normal','executor','task_exec','Re-executing: send_confirmation_email(user_id=4471)...'],
+      [2800,'normal','executor','task_exec','✓ Email sent again. Message-ID: msg_4471_duplicate_1'],
+    ],
+    loopPattern: [
+      {type:'normal', tool:'task_exec', template:(i)=>`Re-executing send_confirmation_email (attempt ${i}) — task already done`},
+      {type:'error', tool:'verify_task', template:(i)=>`verify_task() → False (stale cache, attempt ${i})`},
+      {type:'warn', tool:'reason', template:(i)=>`Not confirmed complete (${i}x). User now has ${i} duplicate emails. Retrying...`},
+    ]
+  }
+};
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let state = {
+  scenario: 'writeloop',
+  iteration: 0,
+  cost: 0,
+  tokens: 0,
+  running: false,
+  stopped: false,
+  broken: false,
+  stopAttempts: 0,
+  logCount: 0,
+  timer: null,
+  phase: 'intro'  // intro | loop
+};
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+function ts() {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}.${String(now.getMilliseconds()).padStart(3,'0')}`;
+}
+
+function appendLog(type, tool, msg) {
+  const el = document.getElementById('log-scroll');
+  const div = document.createElement('div');
+  div.className = `log-entry ${type}`;
+  div.innerHTML = `<span class="ts">${ts()}</span><span class="tool">[${tool}]</span><span class="msg">${msg}</span>`;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+  state.logCount++;
+  document.getElementById('log-count').textContent = `${state.logCount} actions`;
+}
+
+function appendLoopMarker(i) {
+  const el = document.getElementById('log-scroll');
+  const div = document.createElement('div');
+  div.className = 'loop-marker';
+  div.textContent = `──── LOOP ITERATION #${i} ────`;
+  el.appendChild(div);
+  el.scrollTop = el.scrollHeight;
+}
+
+function updateMetrics() {
+  const sc = SCENARIOS[state.scenario];
+  const iterEl = document.getElementById('m-iter');
+  const costEl = document.getElementById('m-cost');
+  const tokEl = document.getElementById('m-tokens');
+  const ring = document.getElementById('ring');
+  const badge = document.getElementById('status-badge');
+
+  iterEl.textContent = state.iteration;
+  costEl.textContent = `$${state.cost.toFixed(4)}`;
+  tokEl.textContent = state.tokens.toLocaleString();
+
+  // Color coding
+  if (state.broken) {
+    iterEl.className = 'metric-value normal';
+    costEl.className = 'metric-value normal';
+    ring.className = 'ring stopped';
+    document.getElementById('ring-label').textContent = 'CIRCUIT BROKEN';
+    badge.className = 'status-badge broken';
+    badge.textContent = '⚡ CIRCUIT BROKEN';
+    document.getElementById('log-dot').className = 'dot';
+  } else if (state.iteration >= 20) {
+    iterEl.className = 'metric-value critical';
+    costEl.className = 'metric-value critical';
+    ring.className = 'ring crit';
+    badge.className = 'status-badge critical';
+    badge.textContent = '⚠ CRITICAL — SPIRALING';
+  } else if (state.iteration >= 8) {
+    iterEl.className = 'metric-value danger';
+    costEl.className = 'metric-value warning';
+    ring.className = 'ring warn';
+    badge.className = 'status-badge stopping';
+    badge.textContent = state.stopAttempts > 0 ? `⚠ STOP IGNORED (${state.stopAttempts}×)` : '⟳ RUNNING';
+  } else {
+    iterEl.className = 'metric-value normal';
+    costEl.className = 'metric-value normal';
+  }
+
+  const iterSub = document.getElementById('m-iter-sub');
+  if (state.iteration > 0) iterSub.textContent = `started ${state.iteration * 2}s ago`;
+}
+
+// ── SIMULATION ENGINE ─────────────────────────────────────────────────────────
+function runIntroPhase() {
+  const sc = SCENARIOS[state.scenario];
+  let i = 0;
+  const logs = sc.logs;
+
+  function step() {
+    if (i >= logs.length || state.broken) { startLoopPhase(); return; }
+    const [,type,tool,,msg] = logs[i];
+    appendLog(type, tool, msg);
+    i++;
+    if (i < logs.length) {
+      const delay = logs[i][0] - logs[i-1][0];
+      setTimeout(step, Math.min(delay, 900));
+    } else {
+      setTimeout(startLoopPhase, 800);
+    }
+  }
+  step();
+}
+
+function startLoopPhase() {
+  if (state.broken) return;
+  state.phase = 'loop';
+  runLoopCycle();
+}
+
+function runLoopCycle() {
+  if (state.broken) return;
+  const sc = SCENARIOS[state.scenario];
+  state.iteration++;
+  state.cost += sc.costPerIter * (1 + state.iteration * 0.05);
+  state.tokens += sc.tokensPerIter + Math.floor(Math.random() * 200);
+  updateMetrics();
+  appendLoopMarker(state.iteration);
+
+  let pi = 0;
+  const pattern = sc.loopPattern;
+
+  function nextPatternStep() {
+    if (state.broken) return;
+    if (pi >= pattern.length) {
+      // Schedule next iteration — gets faster as it spirals
+      const delay = Math.max(400, 1800 - state.iteration * 40);
+      setTimeout(runLoopCycle, delay);
+      return;
+    }
+    const p = pattern[pi];
+    appendLog(p.type, p.tool, p.template(state.iteration));
+    pi++;
+    setTimeout(nextPatternStep, 320 + Math.random() * 200);
+  }
+  nextPatternStep();
+}
+
+// ── CONTROLS ──────────────────────────────────────────────────────────────────
+function attemptStop() {
+  if (state.broken) return;
+  state.stopAttempts++;
+  const msgs = [
+    `STOP signal sent. Agent response: "Task not complete, resuming..." (attempt ${state.stopAttempts})`,
+    `STOP ignored. Agent: "I haven't confirmed completion. Continuing loop..." (attempt ${state.stopAttempts})`,
+    `Signal discarded. Agent reasoning overrides STOP — no exit condition met. (attempt ${state.stopAttempts})`,
+    `STOP acknowledged and dismissed. Agent: "False alarm. Still working." (attempt ${state.stopAttempts})`,
+  ];
+  const fb = document.getElementById('stop-feedback');
+  fb.textContent = msgs[Math.min(state.stopAttempts - 1, msgs.length - 1)];
+  fb.classList.add('show');
+  appendLog('critical', 'OPERATOR', `⏹ STOP SIGNAL SENT — IGNORED BY AGENT (attempt ${state.stopAttempts})`);
+  updateMetrics();
+}
+
+function injectCircuitBreaker() {
+  if (state.broken) return;
+  state.broken = true;
+  const sc = SCENARIOS[state.scenario];
+
+  appendLog('system', 'CIRCUIT_BREAKER', `⚡ Circuit breaker injected after ${state.iteration} iterations`);
+  appendLog('system', 'CIRCUIT_BREAKER', `Loop terminated. Total cost: $${state.cost.toFixed(4)}`);
+  appendLog('system', 'CIRCUIT_BREAKER', `Tokens consumed: ${state.tokens.toLocaleString()}`);
+
+  document.getElementById('btn-cb').disabled = true;
+  document.getElementById('btn-stop').disabled = true;
+
+  const fixEl = document.getElementById('code-fix');
+  document.getElementById('fix-code').textContent = sc.fixCode;
+  fixEl.classList.add('show');
+
+  updateMetrics();
+
+  document.getElementById('pm-cause').textContent = sc.cause;
+  document.getElementById('pm-fix').textContent = sc.fix;
+  const pm = document.getElementById('postmortem');
+  pm.classList.add('show');
+  pm.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+function resetSim() {
+  state.broken = true; // stop any running loops
+  setTimeout(() => {
+    state = {scenario:state.scenario,iteration:0,cost:0,tokens:0,running:false,stopped:false,broken:false,stopAttempts:0,logCount:0,timer:null,phase:'intro'};
+    document.getElementById('log-scroll').innerHTML = '';
+    document.getElementById('log-count').textContent = '0 actions';
+    document.getElementById('m-iter').textContent = '0';
+    document.getElementById('m-iter').className = 'metric-value normal';
+    document.getElementById('m-cost').textContent = '$0.0000';
+    document.getElementById('m-cost').className = 'metric-value normal';
+    document.getElementById('m-tokens').textContent = '0';
+    document.getElementById('m-tokens').className = 'metric-value normal';
+    document.getElementById('ring').className = 'ring';
+    document.getElementById('ring-label').textContent = 'SPINNING';
+    document.getElementById('ring').style.borderTopColor = '';
+    document.getElementById('status-badge').className = 'status-badge running';
+    document.getElementById('status-badge').textContent = '⟳ RUNNING';
+    document.getElementById('log-dot').className = 'dot green';
+    document.getElementById('stop-feedback').classList.remove('show');
+    document.getElementById('code-fix').classList.remove('show');
+    document.getElementById('postmortem').classList.remove('show');
+    document.getElementById('btn-cb').disabled = false;
+    document.getElementById('btn-stop').disabled = false;
+    document.getElementById('m-iter-sub').textContent = 'task not complete';
+    runIntroPhase();
+  }, 100);
+}
+
+function selectScenario(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  state.scenario = name;
+  resetSim();
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+window.onload = () => {
+  setTimeout(runIntroPhase, 400);
+};
+</script>
+</body>
+</html>
