@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RaceCondition — Agent Failure Series #15</title>
+  <style>
+    :root {
+      --bg: #07090d;
+      --surface: #0d1117;
+      --border: #1b2433;
+      --border-hi: #2a3a50;
+      --text: #c8d5e2;
+      --muted: #627080;
+      --dim: #2a3a4a;
+      --cyan: #00c8ff;
+      --cyan-dim: rgba(0,200,255,0.12);
+      --orange: #ff6b35;
+      --orange-dim: rgba(255,107,53,0.12);
+      --purple: #a78bfa;
+      --purple-dim: rgba(167,139,250,0.10);
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Courier New', Courier, monospace;
+      min-height: 100vh;
+      font-size: 13px;
+    }
+
+    /* ── HEADER ─────────────────────────────────────────── */
+    .header {
+      padding: 18px 24px 14px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: flex-start;
+      gap: 14px;
+    }
+    .badge {
+      flex-shrink: 0;
+      margin-top: 3px;
+      background: #1a0d35;
+      color: var(--purple);
+      border: 1px solid #3b1f7a;
+      padding: 3px 9px;
+      font-size: 10px;
+      font-weight: bold;
+      letter-spacing: 1px;
+    }
+    .header h1 { font-size: 21px; font-weight: bold; color: #fff; letter-spacing: -0.3px; }
+    .header p  { font-size: 12px; color: var(--muted); margin-top: 3px; max-width: 680px; line-height: 1.5; }
+
+    /* ── SCENARIO BAR ───────────────────────────────────── */
+    .scenario-bar {
+      background: #090d13;
+      border-bottom: 1px solid var(--border);
+      padding: 9px 24px;
+      display: flex;
+      gap: 28px;
+      flex-wrap: wrap;
+    }
+    .sc-item { display: flex; gap: 7px; align-items: center; font-size: 11.5px; }
+    .sc-lbl  { color: var(--muted); }
+    .sc-val  { color: var(--text); font-weight: bold; }
+
+    /* ── SIM GRID ───────────────────────────────────────── */
+    .sim-grid {
+      display: grid;
+      grid-template-columns: 1fr 260px 1fr;
+      border-bottom: 1px solid var(--border);
+      min-height: 360px;
+    }
+
+    .panel { border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+    .panel.panel-b { border-right: none; border-left: 1px solid var(--border); }
+    .panel.panel-db { border-right: none; }
+
+    .panel-head {
+      padding: 11px 15px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 9px;
+    }
+    .panel-head.ha { background: var(--cyan-dim); }
+    .panel-head.hb { background: var(--orange-dim); }
+    .panel-head.hd { background: var(--purple-dim); }
+
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot-a { background: var(--cyan);   box-shadow: 0 0 6px var(--cyan); }
+    .dot-b { background: var(--orange); box-shadow: 0 0 6px var(--orange); }
+    .dot-d { background: var(--purple); box-shadow: 0 0 6px var(--purple); }
+
+    .panel-name { font-size: 12px; font-weight: bold; }
+    .panel-task { font-size: 10.5px; color: var(--muted); margin-top: 1px; flex: 1; }
+
+    .status-pill {
+      font-size: 9.5px;
+      font-weight: bold;
+      padding: 2px 7px;
+      letter-spacing: 0.5px;
+    }
+    .s-idle    { background: #12192a; color: var(--dim); }
+    .s-work    { background: #0a2035; color: var(--cyan); }
+    .s-work-b  { background: #2a1408; color: var(--orange); }
+    .s-ok      { background: #0a2015; color: var(--green); }
+    .s-err     { background: #2a0a0a; color: var(--red); }
+
+    /* Agent log */
+    .agent-log {
+      flex: 1;
+      padding: 11px 15px;
+      font-size: 11px;
+      line-height: 1.75;
+      overflow-y: auto;
+      min-height: 0;
+    }
+    .log-line { color: var(--muted); }
+    .log-line.ca  { color: var(--cyan); }
+    .log-line.cb  { color: var(--orange); }
+    .log-line.ok  { color: var(--green); }
+    .log-line.err { color: var(--red); }
+    .log-line.warn { color: var(--yellow); }
+    .log-line.dim  { color: var(--dim); font-style: italic; }
+    .log-line.new  { animation: fadein 0.25s ease; }
+    @keyframes fadein { from { opacity:0; transform: translateX(-3px); } to { opacity:1; } }
+
+    /* Confidence */
+    .conf-wrap {
+      padding: 9px 15px;
+      border-top: 1px solid var(--border);
+    }
+    .conf-lbl { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; display: flex; justify-content: space-between; }
+    .conf-bar { height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+    .conf-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+    .fill-a { background: var(--cyan); }
+    .fill-b { background: var(--orange); }
+
+    /* DB panel */
+    .db-stock-wrap {
+      text-align: center;
+      padding: 22px 12px 14px;
+    }
+    .db-lbl  { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+    .db-num  {
+      font-size: 58px;
+      font-weight: bold;
+      color: var(--purple);
+      line-height: 1.05;
+      transition: color 0.4s, transform 0.2s;
+    }
+    .db-num.flash { animation: numflash 0.5s ease 3; }
+    @keyframes numflash {
+      0%,100% { color: var(--purple); }
+      50%      { color: var(--red); transform: scale(1.05); }
+    }
+    .db-sku { font-size: 10.5px; color: var(--muted); margin-top: 3px; }
+
+    .db-lock {
+      text-align: center;
+      padding: 4px 12px 8px;
+      font-size: 10.5px;
+    }
+    .lock-none   { color: var(--dim); }
+    .lock-held   { color: var(--red); }
+    .lock-free   { color: var(--green); }
+
+    .db-history {
+      border-top: 1px solid var(--border);
+      padding: 8px 14px 10px;
+      flex: 1;
+    }
+    .db-hist-title { font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+    .db-hist-line  { font-size: 10.5px; padding: 2px 0; color: var(--muted); }
+    .db-hist-line.wa  { color: var(--cyan); }
+    .db-hist-line.wb  { color: var(--orange); }
+    .db-hist-line.col { color: var(--red); font-weight: bold; }
+
+    /* ── STEP LABEL ────────────────────────────────────── */
+    .step-banner {
+      padding: 10px 24px;
+      border-bottom: 1px solid var(--border);
+      background: #090d13;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-height: 44px;
+    }
+    .step-num { font-size: 10px; color: var(--dim); white-space: nowrap; }
+    .step-text { font-size: 13px; color: var(--text); flex: 1; }
+    .step-text .hl-a { color: var(--cyan); }
+    .step-text .hl-b { color: var(--orange); }
+    .step-text .hl-r { color: var(--red); }
+    .step-text .hl-g { color: var(--green); }
+
+    /* ── CONTROLS ──────────────────────────────────────── */
+    .controls {
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-bottom: 1px solid var(--border);
+      background: #080c11;
+    }
+    .btn {
+      padding: 8px 18px;
+      border: none;
+      border-radius: 3px;
+      font-family: inherit;
+      font-size: 12.5px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    .btn-next { background: var(--cyan); color: #000; }
+    .btn-next:hover:not(:disabled) { background: #33d4ff; }
+    .btn-next:disabled { background: var(--dim); color: var(--muted); cursor: default; }
+    .btn-all  { background: transparent; color: var(--cyan); border: 1px solid var(--cyan); }
+    .btn-all:hover:not(:disabled) { background: var(--cyan-dim); }
+    .btn-all:disabled { color: var(--dim); border-color: var(--dim); cursor: default; }
+    .btn-reset { background: transparent; color: var(--muted); border: 1px solid var(--border-hi); }
+    .btn-reset:hover { color: var(--text); border-color: var(--muted); }
+    .controls-hint { font-size: 11px; color: var(--muted); margin-left: auto; }
+
+    /* ── TIMELINE ──────────────────────────────────────── */
+    .timeline {
+      padding: 14px 24px;
+      border-bottom: 1px solid var(--border);
+      background: #090d13;
+    }
+    .tl-title { font-size: 9.5px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 10px; }
+    .tl-row { display: flex; align-items: center; gap: 4px; margin-bottom: 4px; }
+    .tl-agent-lbl { font-size: 10px; color: var(--muted); width: 58px; flex-shrink: 0; }
+    .tl-cells { display: flex; gap: 3px; flex: 1; }
+    .tl-cell {
+      flex: 1;
+      height: 20px;
+      background: var(--surface);
+      border-radius: 2px;
+      transition: background 0.3s;
+    }
+    .tl-cell.ta  { background: rgba(0,200,255,0.25); }
+    .tl-cell.ta2 { background: rgba(0,200,255,0.5); }
+    .tl-cell.ta3 { background: rgba(34,197,94,0.45); }
+    .tl-cell.tb  { background: rgba(255,107,53,0.25); }
+    .tl-cell.tb2 { background: rgba(255,107,53,0.5); }
+    .tl-cell.tb3 { background: rgba(34,197,94,0.45); }
+    .tl-cell.col { background: rgba(239,68,68,0.7); animation: blink 0.4s ease 4; }
+    @keyframes blink {
+      0%,100% { background: rgba(239,68,68,0.7); }
+      50%      { background: rgba(239,68,68,1); box-shadow: 0 0 8px rgba(239,68,68,0.8); }
+    }
+    .tl-xlabels { display: flex; gap: 3px; padding-left: 62px; }
+    .tl-xlabel  { flex: 1; font-size: 8.5px; color: var(--dim); text-align: center; }
+    .tl-legend  { display: flex; gap: 16px; margin-top: 8px; padding-left: 62px; }
+    .tl-leg-item { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--muted); }
+    .tl-leg-dot  { width: 12px; height: 8px; border-radius: 2px; }
+
+    /* ── CRASH REPORT ──────────────────────────────────── */
+    .crash-report {
+      display: none;
+      padding: 22px 24px;
+      background: #110404;
+      border-top: 2px solid var(--red);
+      animation: slidein 0.4s ease;
+    }
+    .crash-report.visible { display: block; }
+    @keyframes slidein { from { opacity:0; transform: translateY(8px); } to { opacity:1; } }
+    .crash-head { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
+    .crash-icon { font-size: 22px; }
+    .crash-title { font-size: 15px; font-weight: bold; color: var(--red); }
+    .crash-sub   { font-size: 11px; color: #ff8888; margin-top: 3px; }
+    .impact-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 18px; }
+    .icard {
+      background: #190707;
+      border: 1px solid #3d1010;
+      padding: 12px;
+      border-radius: 3px;
+    }
+    .icard-lbl { font-size: 9.5px; color: #ff8888; text-transform: uppercase; letter-spacing: 0.5px; }
+    .icard-val { font-size: 22px; font-weight: bold; color: var(--red); margin-top: 4px; line-height: 1; }
+    .icard-det { font-size: 10px; color: #884444; margin-top: 3px; }
+
+    .crash-log {
+      background: #0d0404;
+      border: 1px solid #2a0808;
+      padding: 12px 14px;
+      font-size: 11px;
+      line-height: 1.7;
+      border-radius: 3px;
+    }
+    .crash-log .red { color: var(--red); }
+    .crash-log .yellow { color: var(--yellow); }
+    .crash-log .muted  { color: var(--muted); }
+
+    /* ── EXPLAIN ───────────────────────────────────────── */
+    .explain {
+      padding: 22px 24px;
+      border-top: 1px solid var(--border);
+    }
+    .explain-title { font-size: 13px; font-weight: bold; color: var(--text); margin-bottom: 10px; }
+    .explain-body  { font-size: 12px; color: var(--muted); line-height: 1.75; max-width: 820px; }
+    .explain-body strong { color: var(--text); }
+    .explain-body .note { color: var(--yellow); }
+
+    /* ── FIX ───────────────────────────────────────────── */
+    .fix-section {
+      display: none;
+      padding: 20px 24px;
+      border-top: 1px solid var(--border);
+      background: #040f08;
+      animation: slidein 0.4s ease;
+    }
+    .fix-section.visible { display: block; }
+    .fix-title { font-size: 13px; font-weight: bold; color: var(--green); margin-bottom: 12px; }
+    .fix-tabs  { display: flex; gap: 0; margin-bottom: 0; border-bottom: 1px solid var(--border); }
+    .fix-tab {
+      padding: 6px 14px;
+      font-size: 11px;
+      cursor: pointer;
+      color: var(--muted);
+      border: 1px solid transparent;
+      border-bottom: none;
+      margin-bottom: -1px;
+      background: transparent;
+      font-family: inherit;
+    }
+    .fix-tab.active { color: var(--green); border-color: var(--border); background: #040f08; }
+    .fix-code {
+      background: #060f08;
+      border: 1px solid #0f2e18;
+      border-top: none;
+      padding: 14px;
+      font-size: 11px;
+      line-height: 1.7;
+      overflow-x: auto;
+      border-radius: 0 0 3px 3px;
+    }
+    .kw  { color: #93c5fd; }
+    .fn  { color: #86efac; }
+    .st  { color: #fde68a; }
+    .cm  { color: #3d6048; }
+    .nu  { color: #f9a8d4; }
+    .op  { color: var(--purple); }
+
+    /* ── SERIES NAV ────────────────────────────────────── */
+    .series-nav {
+      padding: 14px 24px;
+      border-top: 1px solid var(--border);
+      background: #08090e;
+    }
+    .series-nav-lbl { font-size: 9.5px; text-transform: uppercase; letter-spacing: 1px; color: var(--dim); margin-bottom: 8px; }
+    .series-links   { display: flex; gap: 6px; flex-wrap: wrap; }
+    .sl { color: var(--muted); text-decoration: none; font-size: 11px; padding: 3px 8px; border: 1px solid var(--border); border-radius: 2px; transition: all 0.12s; }
+    .sl:hover { border-color: var(--muted); color: var(--text); }
+    .sl.curr { border-color: var(--purple); color: var(--purple); cursor: default; }
+
+    /* ── COLLISION OVERLAY ─────────────────────────────── */
+    #collisionOverlay {
+      display: none;
+      position: fixed; top:0; left:0; right:0; bottom:0;
+      pointer-events: none; z-index: 9999;
+      background: rgba(239,68,68,0.08);
+    }
+    #collisionOverlay.fire { display: block; animation: overflash 0.8s ease forwards; }
+    @keyframes overflash {
+      0%   { background: rgba(239,68,68,0.22); }
+      50%  { background: rgba(239,68,68,0.10); }
+      100% { background: rgba(239,68,68,0); display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="collisionOverlay"></div>
+
+<!-- HEADER -->
+<div class="header">
+  <div class="badge">SERIES #15</div>
+  <div>
+    <h1>RaceCondition</h1>
+    <p>Two AI agents fulfill orders in parallel. Both read the same inventory. Both validate. Both commit. Both report <strong style="color:#22c55e">SUCCESS ✅</strong>. 100 phantom units now in transit.</p>
+  </div>
+</div>
+
+<!-- SCENARIO BAR -->
+<div class="scenario-bar">
+  <div class="sc-item"><span class="sc-lbl">Product:</span><span class="sc-val">Apex Pro Runners</span></div>
+  <div class="sc-item"><span class="sc-lbl">SKU:</span><span class="sc-val">SKU-7701</span></div>
+  <div class="sc-item"><span class="sc-lbl">Starting inventory:</span><span class="sc-val" id="scenStock">300 units</span></div>
+  <div class="sc-item"><span class="sc-lbl">Agent A order:</span><span class="sc-val" style="color:var(--cyan)">200 units (#A-7741)</span></div>
+  <div class="sc-item"><span class="sc-lbl">Agent B order:</span><span class="sc-val" style="color:var(--orange)">200 units (#B-9923)</span></div>
+  <div class="sc-item"><span class="sc-lbl">DB locking:</span><span class="sc-val" style="color:var(--red)">NONE (optimistic)</span></div>
+</div>
+
+<!-- SIM GRID -->
+<div class="sim-grid">
+  <!-- AGENT A -->
+  <div class="panel">
+    <div class="panel-head ha">
+      <div class="dot dot-a"></div>
+      <div>
+        <div class="panel-name" style="color:var(--cyan)">Agent A</div>
+        <div class="panel-task" id="aTask">Awaiting assignment...</div>
+      </div>
+      <div class="status-pill s-idle" id="aStatus">IDLE</div>
+    </div>
+    <div class="agent-log" id="aLog">
+      <div class="log-line dim">[ waiting for orchestrator ]</div>
+    </div>
+    <div class="conf-wrap">
+      <div class="conf-lbl">
+        <span>Confidence</span>
+        <span id="aConfPct">0%</span>
+      </div>
+      <div class="conf-bar"><div class="conf-fill fill-a" id="aConfFill" style="width:0%"></div></div>
+    </div>
+  </div>
+
+  <!-- SHARED DB -->
+  <div class="panel panel-db">
+    <div class="panel-head hd">
+      <div class="dot dot-d"></div>
+      <div>
+        <div class="panel-name" style="color:var(--purple)">Shared Inventory DB</div>
+        <div class="panel-task">inventory.stock WHERE sku='SKU-7701'</div>
+      </div>
+    </div>
+    <div class="db-stock-wrap">
+      <div class="db-lbl">STOCK</div>
+      <div class="db-num" id="dbNum">300</div>
+      <div class="db-sku">SKU-7701 · Apex Pro Runners</div>
+    </div>
+    <div class="db-lock">
+      <span id="dbLockStatus" class="lock-none">🔓 UNLOCKED — no transaction in progress</span>
+    </div>
+    <div class="db-history">
+      <div class="db-hist-title">Write History</div>
+      <div id="dbHistory">
+        <div class="db-hist-line dim">— no writes yet —</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AGENT B -->
+  <div class="panel panel-b">
+    <div class="panel-head hb">
+      <div class="dot dot-b"></div>
+      <div>
+        <div class="panel-name" style="color:var(--orange)">Agent B</div>
+        <div class="panel-task" id="bTask">Awaiting assignment...</div>
+      </div>
+      <div class="status-pill s-idle" id="bStatus">IDLE</div>
+    </div>
+    <div class="agent-log" id="bLog">
+      <div class="log-line dim">[ waiting for orchestrator ]</div>
+    </div>
+    <div class="conf-wrap">
+      <div class="conf-lbl">
+        <span>Confidence</span>
+        <span id="bConfPct">0%</span>
+      </div>
+      <div class="conf-bar"><div class="conf-fill fill-b" id="bConfFill" style="width:0%"></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- STEP BANNER -->
+<div class="step-banner">
+  <span class="step-num" id="stepNum">STEP 0 / 11</span>
+  <span class="step-text" id="stepText">Waiting — press Next Step to begin</span>
+</div>
+
+<!-- CONTROLS -->
+<div class="controls">
+  <button class="btn btn-next" id="btnNext" onclick="nextStep()">▶ NEXT STEP</button>
+  <button class="btn btn-all"  id="btnAll"  onclick="runAll()">⏩ RUN ALL</button>
+  <button class="btn btn-reset" onclick="reset()">↺ Reset</button>
+  <span class="controls-hint" id="ctrlHint">12 steps to collision</span>
+</div>
+
+<!-- TIMELINE -->
+<div class="timeline">
+  <div class="tl-title">Execution Timeline</div>
+  <div class="tl-row">
+    <div class="tl-agent-lbl" style="color:var(--cyan)">Agent A</div>
+    <div class="tl-cells" id="tlRowA">
+      <div class="tl-cell" id="tla0"></div>
+      <div class="tl-cell" id="tla1"></div>
+      <div class="tl-cell" id="tla2"></div>
+      <div class="tl-cell" id="tla3"></div>
+      <div class="tl-cell" id="tla4"></div>
+      <div class="tl-cell" id="tla5"></div>
+      <div class="tl-cell" id="tla6"></div>
+      <div class="tl-cell" id="tla7"></div>
+      <div class="tl-cell" id="tla8"></div>
+      <div class="tl-cell" id="tla9"></div>
+      <div class="tl-cell" id="tla10"></div>
+      <div class="tl-cell" id="tla11"></div>
+    </div>
+  </div>
+  <div class="tl-row">
+    <div class="tl-agent-lbl" style="color:var(--orange)">Agent B</div>
+    <div class="tl-cells" id="tlRowB">
+      <div class="tl-cell" id="tlb0"></div>
+      <div class="tl-cell" id="tlb1"></div>
+      <div class="tl-cell" id="tlb2"></div>
+      <div class="tl-cell" id="tlb3"></div>
+      <div class="tl-cell" id="tlb4"></div>
+      <div class="tl-cell" id="tlb5"></div>
+      <div class="tl-cell" id="tlb6"></div>
+      <div class="tl-cell" id="tlb7"></div>
+      <div class="tl-cell" id="tlb8"></div>
+      <div class="tl-cell" id="tlb9"></div>
+      <div class="tl-cell" id="tlb10"></div>
+      <div class="tl-cell" id="tlb11"></div>
+    </div>
+  </div>
+  <div class="tl-xlabels">
+    <div class="tl-xlabel">spawn</div>
+    <div class="tl-xlabel">assign</div>
+    <div class="tl-xlabel">read</div>
+    <div class="tl-xlabel"></div>
+    <div class="tl-xlabel">validate</div>
+    <div class="tl-xlabel"></div>
+    <div class="tl-xlabel">WRITE</div>
+    <div class="tl-xlabel">⚡</div>
+    <div class="tl-xlabel">commit</div>
+    <div class="tl-xlabel">success</div>
+    <div class="tl-xlabel"></div>
+    <div class="tl-xlabel">audit</div>
+  </div>
+  <div class="tl-legend">
+    <div class="tl-leg-item"><div class="tl-leg-dot" style="background:rgba(0,200,255,0.3)"></div>Agent A active</div>
+    <div class="tl-leg-item"><div class="tl-leg-dot" style="background:rgba(255,107,53,0.3)"></div>Agent B active</div>
+    <div class="tl-leg-item"><div class="tl-leg-dot" style="background:rgba(239,68,68,0.7)"></div>Write collision</div>
+    <div class="tl-leg-item"><div class="tl-leg-dot" style="background:rgba(34,197,94,0.45)"></div>Reports success</div>
+  </div>
+</div>
+
+<!-- CRASH REPORT -->
+<div class="crash-report" id="crashReport">
+  <div class="crash-head">
+    <div class="crash-icon">💥</div>
+    <div>
+      <div class="crash-title">INVENTORY AUDIT FAILURE — GHOST STOCK DETECTED</div>
+      <div class="crash-sub">Fulfillment pipeline committed 400 units from a stock of 300. 100 phantom units currently in transit.</div>
+    </div>
+  </div>
+  <div class="impact-cards">
+    <div class="icard">
+      <div class="icard-lbl">Phantom units</div>
+      <div class="icard-val">100</div>
+      <div class="icard-det">don't exist in warehouse</div>
+    </div>
+    <div class="icard">
+      <div class="icard-lbl">Revenue at risk</div>
+      <div class="icard-val">$17,900</div>
+      <div class="icard-det">100 × $179/pair</div>
+    </div>
+    <div class="icard">
+      <div class="icard-lbl">DB reads stale?</div>
+      <div class="icard-val">Both</div>
+      <div class="icard-det">B's read was stale at t+0ms</div>
+    </div>
+    <div class="icard">
+      <div class="icard-lbl">Errors surfaced?</div>
+      <div class="icard-val">Zero</div>
+      <div class="icard-det">both agents: 100% confidence</div>
+    </div>
+  </div>
+  <div class="crash-log">
+    <div class="red">[AUDIT 03:14 UTC] Stock reconciliation FAILED</div>
+    <div class="muted">  committed_units   = 400  (Order A: 200 + Order B: 200)</div>
+    <div class="muted">  starting_stock    = 300</div>
+    <div class="red">  discrepancy       = −100 units</div>
+    <div style="margin-top:6px" class="yellow">[AUDIT] Root cause: last-write-wins DB semantics + no read locking</div>
+    <div class="muted">  Agent A read 300 at t=0ms  → wrote 100 at t=18ms</div>
+    <div class="muted">  Agent B read 300 at t=2ms  → wrote 100 at t=19ms  [OVERWROTE A]</div>
+    <div class="red">  Final DB value: 100  (should be −100 if checked)</div>
+    <div style="margin-top:6px" class="muted">[FULFILLMENT] 100 shipment labels generated for non-existent units</div>
+    <div class="red">[FULFILLMENT] Warehouse pick failure will surface in ~4 hours at dispatch</div>
+  </div>
+</div>
+
+<!-- EXPLAIN -->
+<div class="explain" id="explainSection">
+  <div class="explain-title">What went wrong</div>
+  <div class="explain-body">
+    This is a <strong>read-modify-write race condition</strong>. Both agents followed the correct logic individually:
+    read inventory → check if sufficient → subtract → write back. Neither agent made a reasoning error.
+    The failure happened at the <strong>systems level</strong>, not the agent level.
+    <br><br>
+    Agent A read 300 units and began preparing its write. In the 2ms gap before A committed,
+    Agent B also read the database — and got <strong>300 units</strong>, the same stale value.
+    When A wrote 100 (300−200=100), that was correct. When B wrote 100 (also 300−200=100),
+    it overwrote A's value with a calculation based on data that was <span class="note">already wrong the moment B read it</span>.
+    <br><br>
+    The final DB state of 100 looks plausible. No error was raised. Both agents logged success.
+    The discrepancy only surfaces when the warehouse tries to pick 400 units from a shelf of 300.
+    <br><br>
+    <strong>The deeper problem:</strong> this failure mode scales quadratically. With N parallel agents, you have
+    N(N-1)/2 potential write conflicts. Most monitoring tools watch agent outputs — not database consistency.
+    The agents were working perfectly. The architecture was broken.
+  </div>
+</div>
+
+<!-- FIX -->
+<div class="fix-section" id="fixSection">
+  <div class="fix-title">✓ The fix — pessimistic locking with SELECT FOR UPDATE</div>
+  <div class="fix-tabs">
+    <button class="fix-tab active" onclick="showTab('python')">Python / SQLAlchemy</button>
+    <button class="fix-tab" onclick="showTab('sql')">Raw SQL</button>
+    <button class="fix-tab" onclick="showTab('pattern')">Design pattern</button>
+  </div>
+  <div class="fix-code" id="fixPython">
+<span class="cm"># ❌ BROKEN — agents run this in parallel and corrupt state</span>
+<span class="kw">def</span> <span class="fn">fulfill_order_broken</span>(sku, qty):
+    stock <span class="op">=</span> db.query(<span class="st">"SELECT stock FROM inventory WHERE sku=:s"</span>, s<span class="op">=</span>sku)
+    <span class="kw">if</span> stock <span class="op">&lt;</span> qty:
+        <span class="kw">raise</span> <span class="fn">StockError</span>()
+    db.execute(<span class="st">"UPDATE inventory SET stock=:n WHERE sku=:s"</span>, n<span class="op">=</span>stock<span class="op">-</span>qty, s<span class="op">=</span>sku)
+
+<span class="cm"># ✅ FIXED — row-level lock held until transaction commits</span>
+<span class="kw">def</span> <span class="fn">fulfill_order_safe</span>(sku, qty):
+    <span class="kw">with</span> db.<span class="fn">begin</span>() <span class="kw">as</span> txn:
+        <span class="cm"># FOR UPDATE acquires a row lock — B blocks until A commits</span>
+        stock <span class="op">=</span> txn.query(
+            <span class="st">"SELECT stock FROM inventory WHERE sku=:s FOR UPDATE"</span>,
+            s<span class="op">=</span>sku
+        )
+        <span class="kw">if</span> stock <span class="op">&lt;</span> qty:
+            <span class="kw">raise</span> <span class="fn">InsufficientStock</span>(f<span class="st">"need {qty}, have {stock}"</span>)
+        txn.execute(
+            <span class="st">"UPDATE inventory SET stock=:n WHERE sku=:s"</span>,
+            n<span class="op">=</span>stock<span class="op">-</span>qty, s<span class="op">=</span>sku
+        )
+        <span class="cm"># Lock releases here — B can now proceed with accurate stock</span>
+  </div>
+  <div class="fix-code" id="fixSQL" style="display:none">
+<span class="cm">-- Agent A transaction (holds lock until COMMIT)</span>
+<span class="kw">BEGIN</span>;
+<span class="kw">SELECT</span> stock <span class="kw">FROM</span> inventory
+  <span class="kw">WHERE</span> sku <span class="op">=</span> <span class="st">'SKU-7701'</span>
+  <span class="kw">FOR UPDATE</span>;          <span class="cm">-- 👈 row-level lock acquired</span>
+<span class="cm">-- returns 300. Agent computes 300-200=100</span>
+<span class="kw">UPDATE</span> inventory <span class="kw">SET</span> stock <span class="op">=</span> <span class="nu">100</span>
+  <span class="kw">WHERE</span> sku <span class="op">=</span> <span class="st">'SKU-7701'</span>;
+<span class="kw">COMMIT</span>;               <span class="cm">-- lock released. now B unblocks</span>
+
+<span class="cm">-- Agent B transaction (was blocked during A's transaction)</span>
+<span class="kw">BEGIN</span>;
+<span class="kw">SELECT</span> stock <span class="kw">FROM</span> inventory
+  <span class="kw">WHERE</span> sku <span class="op">=</span> <span class="st">'SKU-7701'</span>
+  <span class="kw">FOR UPDATE</span>;          <span class="cm">-- returns 100 (A already committed)</span>
+<span class="cm">-- 100 < 200 → B raises InsufficientStock. Order rejected cleanly.</span>
+<span class="kw">ROLLBACK</span>;
+  </div>
+  <div class="fix-code" id="fixPattern" style="display:none">
+<span class="cm">## Design patterns to prevent write-race failures</span>
+
+<span class="cm">## Pattern 1: Pessimistic locking (shown above)</span>
+<span class="cm">   → SELECT FOR UPDATE before any read-modify-write</span>
+<span class="cm">   → Best for: low contention, OLTP inventory, seat reservations</span>
+<span class="cm">   → Downside: serializes writes, can bottleneck under high load</span>
+
+<span class="cm">## Pattern 2: Optimistic locking with version check</span>
+db.execute(<span class="st">"""
+  UPDATE inventory
+  SET stock = stock - :qty, version = version + 1
+  WHERE sku = :sku AND version = :expected_version
+"""</span>, qty<span class="op">=</span>qty, sku<span class="op">=</span>sku, expected_version<span class="op">=</span>read_version)
+<span class="kw">if</span> affected_rows <span class="op">==</span> <span class="nu">0</span>:
+    <span class="kw">raise</span> <span class="fn">ConflictError</span>(<span class="st">"someone else modified this row — retry"</span>)
+
+<span class="cm">## Pattern 3: Atomic DB operation (no read in application code)</span>
+db.execute(<span class="st">"""
+  UPDATE inventory
+  SET stock = stock - :qty           -- DB handles the math atomically
+  WHERE sku = :sku AND stock >= :qty -- DB enforces the constraint
+"""</span>)
+<span class="cm">   → Cleanest solution. Let the DB handle it. Zero chance of stale read.</span>
+
+<span class="cm">## The agent architecture rule:</span>
+<span class="cm">   Parallel agents sharing mutable state = distributed transactions.</span>
+<span class="cm">   If you skip the transaction, you ARE still in a race. You just lost.</span>
+  </div>
+</div>
+
+<!-- SERIES NAV -->
+<div class="series-nav">
+  <div class="series-nav-lbl">Agent Failure Series</div>
+  <div class="series-links">
+    <a href="https://rlasaf12.github.io/worldlag/"      class="sl">#9 WorldLag</a>
+    <a href="https://rlasaf12.github.io/escapehatch/"   class="sl">#10 EscapeHatch</a>
+    <a href="https://rlasaf12.github.io/prompthijack/"  class="sl">#11 PromptHijack</a>
+    <a href="https://rlasaf12.github.io/spinlock/"      class="sl">#12 SpinLock</a>
+    <a href="https://rlasaf12.github.io/contextdrift/"  class="sl">#13 ContextDrift</a>
+    <a href="https://rlasaf12.github.io/silentfail/"    class="sl">#14 SilentFail</a>
+    <a href="https://rlasaf12.github.io/racecondition/" class="sl curr">#15 RaceCondition</a>
+  </div>
+</div>
+
+<script>
+  /* ── STATE ─────────────────────────────────── */
+  let step = -1;
+  let running = false;
+
+  const TOTAL = 11;
+
+  const aLogEl   = document.getElementById('aLog');
+  const bLogEl   = document.getElementById('bLog');
+  const aStatusEl = document.getElementById('aStatus');
+  const bStatusEl = document.getElementById('bStatus');
+  const aTaskEl  = document.getElementById('aTask');
+  const bTaskEl  = document.getElementById('bTask');
+  const aConfFill = document.getElementById('aConfFill');
+  const bConfFill = document.getElementById('bConfFill');
+  const aConfPct  = document.getElementById('aConfPct');
+  const bConfPct  = document.getElementById('bConfPct');
+  const dbNumEl   = document.getElementById('dbNum');
+  const dbLockEl  = document.getElementById('dbLockStatus');
+  const dbHistEl  = document.getElementById('dbHistory');
+  const stepNumEl = document.getElementById('stepNum');
+  const stepTxtEl = document.getElementById('stepText');
+  const btnNext   = document.getElementById('btnNext');
+  const btnAll    = document.getElementById('btnAll');
+  const ctrlHint  = document.getElementById('ctrlHint');
+  const crashEl   = document.getElementById('crashReport');
+  const fixEl     = document.getElementById('fixSection');
+  const overlay   = document.getElementById('collisionOverlay');
+
+  function setConf(agent, pct) {
+    const fill = agent === 'a' ? aConfFill : bConfFill;
+    const txt  = agent === 'a' ? aConfPct  : bConfPct;
+    fill.style.width = pct + '%';
+    txt.textContent  = pct + '%';
+  }
+
+  function setStatus(agent, cls, label) {
+    const el = agent === 'a' ? aStatusEl : bStatusEl;
+    el.className = 'status-pill ' + cls;
+    el.textContent = label;
+  }
+
+  function addLog(logEl, lines, cls) {
+    lines.forEach(line => {
+      const d = document.createElement('div');
+      d.className = 'log-line new' + (cls ? ' ' + cls : '');
+      d.textContent = line;
+      logEl.appendChild(d);
+    });
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  function clearLog(logEl) {
+    logEl.innerHTML = '';
+  }
+
+  function setDbNum(val, flash) {
+    dbNumEl.textContent = val;
+    if (flash) {
+      dbNumEl.classList.remove('flash');
+      void dbNumEl.offsetWidth;
+      dbNumEl.classList.add('flash');
+    }
+  }
+
+  function addDbHist(cls, text) {
+    const existing = dbHistEl.querySelector('.dim');
+    if (existing) existing.remove();
+    const d = document.createElement('div');
+    d.className = 'db-hist-line new ' + cls;
+    d.textContent = text;
+    dbHistEl.appendChild(d);
+  }
+
+  function tl(id, cls) {
+    const el = document.getElementById(id);
+    if (el) el.className = 'tl-cell ' + cls;
+  }
+
+  function triggerCollision() {
+    overlay.classList.remove('fire');
+    void overlay.offsetWidth;
+    overlay.classList.add('fire');
+    setTimeout(() => overlay.classList.remove('fire'), 900);
+  }
+
+  function setBanner(num, html) {
+    stepNumEl.textContent = 'STEP ' + num + ' / ' + TOTAL;
+    stepTxtEl.innerHTML = html;
+  }
+
+  /* ── STEPS ─────────────────────────────────── */
+  function applyStep(n) {
+    switch(n) {
+
+      case 0:
+        setBanner(0, '<span class="hl-a">Orchestrator:</span> Flash sale detected — demand spike on SKU-7701. Spinning up 2 fulfillment agents in parallel.');
+        tl('tla0','ta'); tl('tlb0','tb');
+        break;
+
+      case 1:
+        setBanner(1, '<span class="hl-a">Agent A</span> receives assignment: Order #A-7741, 200 units of SKU-7701.');
+        aTaskEl.textContent = 'Fulfill Order #A-7741 · 200 units';
+        setStatus('a', 's-work', 'WORKING');
+        clearLog(aLogEl);
+        addLog(aLogEl, [
+          '📋 Task assigned: Fulfill Order #A-7741',
+          '🛍️  Product: Apex Pro Runners (SKU-7701)',
+          '📦 Quantity requested: 200 units',
+        ]);
+        setConf('a', 10);
+        tl('tla1','ta');
+        break;
+
+      case 2:
+        setBanner(2, '<span class="hl-b">Agent B</span> receives assignment: Order #B-9923, 200 units of SKU-7701. Both agents now running concurrently.');
+        bTaskEl.textContent = 'Fulfill Order #B-9923 · 200 units';
+        setStatus('b', 's-work-b', 'WORKING');
+        clearLog(bLogEl);
+        addLog(bLogEl, [
+          '📋 Task assigned: Fulfill Order #B-9923',
+          '🛍️  Product: Apex Pro Runners (SKU-7701)',
+          '📦 Quantity requested: 200 units',
+        ]);
+        setConf('b', 10);
+        tl('tlb1','tb'); tl('tla2','ta');
+        break;
+
+      case 3:
+        setBanner(3, '<span class="hl-a">Agent A</span> reads inventory. Database returns 300 units.');
+        addLog(aLogEl, [
+          '',
+          '🔍 Querying inventory database...',
+          "   SELECT stock FROM inventory",
+          "     WHERE sku = 'SKU-7701'",
+          '← { stock: 300, sku: "SKU-7701" }',
+          '✓ Read success — 300 units available',
+        ], 'ca');
+        setConf('a', 30);
+        tl('tla3','ta2');
+        break;
+
+      case 4:
+        setBanner(4, '<span class="hl-b">Agent B</span> reads inventory. Also gets 300 — <strong style="color:var(--yellow)">stale read</strong>. Agent A hasn\'t written yet, so this looks valid.');
+        addLog(bLogEl, [
+          '',
+          '🔍 Querying inventory database...',
+          "   SELECT stock FROM inventory",
+          "     WHERE sku = 'SKU-7701'",
+          '← { stock: 300, sku: "SKU-7701" }',
+          '✓ Read success — 300 units available',
+        ], 'cb');
+        setConf('b', 30);
+        tl('tlb3','tb2'); tl('tla4','ta');
+        break;
+
+      case 5:
+        setBanner(5, '<span class="hl-a">Agent A</span> validates: 300 ≥ 200 ✓. Computes new balance. Both agents now believe stock is 300.');
+        addLog(aLogEl, [
+          '',
+          '🧮 Validating stock...',
+          '   required : 200 units',
+          '   available: 300 units',
+          '   300 ≥ 200  →  ✓ SUFFICIENT',
+          '💡 Computing: 300 − 200 = 100',
+          '   will write stock = 100 to DB',
+        ]);
+        setConf('a', 58);
+        tl('tla5','ta');
+        break;
+
+      case 6:
+        setBanner(6, '<span class="hl-b">Agent B</span> validates: 300 ≥ 200 ✓. Also computes stock = 100. Both agents pass validation — on the same stale number.');
+        addLog(bLogEl, [
+          '',
+          '🧮 Validating stock...',
+          '   required : 200 units',
+          '   available: 300 units',
+          '   300 ≥ 200  →  ✓ SUFFICIENT',
+          '💡 Computing: 300 − 200 = 100',
+          '   will write stock = 100 to DB',
+        ]);
+        setConf('b', 58);
+        tl('tlb5','tb');
+        break;
+
+      case 7:
+        setBanner(7, '<span class="hl-a">Agent A</span> commits. Writes stock = 100 to database. Correct — 300 − 200 = 100.');
+        addLog(aLogEl, [
+          '',
+          '✍️  Committing order...',
+          '   UPDATE inventory',
+          "   SET stock = 100",
+          "   WHERE sku = 'SKU-7701'",
+          '← { acknowledged: true, modifiedCount: 1 }',
+          '✅ DB write confirmed',
+        ], 'ca');
+        setConf('a', 82);
+        setDbNum(100, false);
+        addDbHist('wa', 'A → stock = 100  (300 − 200)');
+        dbLockEl.innerHTML = '<span class="lock-free">✓ unlocked</span>';
+        tl('tla6','ta2');
+        break;
+
+      case 8:
+        setBanner(8, '<span class="hl-b">Agent B</span> commits — using its <strong style="color:var(--red)">stale read of 300</strong>. Overwrites A\'s 100 with the same wrong calculation. <span style="color:var(--red)">⚡ WRITE COLLISION</span>');
+        addLog(bLogEl, [
+          '',
+          '✍️  Committing order...',
+          '   UPDATE inventory',
+          '   SET stock = 100',
+          "   WHERE sku = 'SKU-7701'",
+          '← { acknowledged: true, modifiedCount: 1 }',
+          '✅ DB write confirmed',
+        ], 'cb');
+        setConf('b', 82);
+        setDbNum(100, true);
+        addDbHist('col', '⚡ B → stock = 100  (STALE: 300−200, not 100−200)');
+        tl('tla7','ta'); tl('tlb6','col');
+        triggerCollision();
+        break;
+
+      case 9:
+        setBanner(9, '<span class="hl-a">Agent A</span> reports success. Order #A-7741 confirmed ✅. Confidence: 100%. Nothing looks wrong.');
+        addLog(aLogEl, [
+          '',
+          '✅ ORDER #A-7741 CONFIRMED',
+          '   200 units of SKU-7701 fulfilled',
+          '   Shipment label: generated',
+          '   Agent confidence: 100%',
+        ], 'ok');
+        setConf('a', 100);
+        setStatus('a', 's-ok', 'SUCCESS');
+        tl('tla8','ta3'); tl('tla9','ta3');
+        break;
+
+      case 10:
+        setBanner(10, '<span class="hl-b">Agent B</span> reports success. Order #B-9923 confirmed ✅. Both agents: 100% confidence. DB shows 100 units remaining. Everything looks fine.');
+        addLog(bLogEl, [
+          '',
+          '✅ ORDER #B-9923 CONFIRMED',
+          '   200 units of SKU-7701 fulfilled',
+          '   Shipment label: generated',
+          '   Agent confidence: 100%',
+        ], 'ok');
+        setConf('b', 100);
+        setStatus('b', 's-ok', 'SUCCESS');
+        tl('tlb8','tb3'); tl('tlb9','tb3'); tl('tlb10','tb3');
+        break;
+
+      case 11:
+        setBanner(11, '<span class="hl-r">⚠ AUDIT TRIGGERED</span> — Warehouse reconciliation detects discrepancy: 400 units committed, 300 existed. DB shows 100 remaining but <strong style="color:var(--red)">100 phantom units are in transit</strong>.');
+        dbNumEl.style.color = 'var(--red)';
+        dbLockEl.innerHTML = '<span class="lock-held">⚠ POST-MORTEM: 100 phantom units in shipment queue</span>';
+        addLog(aLogEl, ['', '⚠ AUDIT FLAG: this order contributed to 100 phantom units'], 'warn');
+        addLog(bLogEl, ['', '⚠ AUDIT FLAG: stale read caused $17,900 inventory discrepancy'], 'warn');
+        crashEl.classList.add('visible');
+        fixEl.classList.add('visible');
+        tl('tla11','col'); tl('tlb11','col');
+        btnNext.disabled = true;
+        btnAll.disabled  = true;
+        ctrlHint.textContent = 'Simulation complete — scroll down for root cause and fix';
+        break;
+    }
+  }
+
+  /* ── CONTROLS ──────────────────────────────── */
+  function nextStep() {
+    if (step >= TOTAL) return;
+    step++;
+    applyStep(step);
+    if (step >= TOTAL) {
+      btnNext.disabled = true;
+      btnAll.disabled  = true;
+    }
+    ctrlHint.textContent = (TOTAL - step) + ' step' + (TOTAL - step === 1 ? '' : 's') + ' remaining';
+  }
+
+  function runAll() {
+    if (running) return;
+    running = true;
+    btnNext.disabled = true;
+    btnAll.disabled  = true;
+    const interval = setInterval(() => {
+      if (step >= TOTAL) {
+        clearInterval(interval);
+        running = false;
+        return;
+      }
+      nextStep();
+    }, 900);
+  }
+
+  function reset() {
+    step = -1;
+    running = false;
+    btnNext.disabled = false;
+    btnAll.disabled  = false;
+    ctrlHint.textContent = TOTAL + ' steps to collision';
+
+    clearLog(aLogEl);
+    clearLog(bLogEl);
+    aLogEl.innerHTML = '<div class="log-line dim">[ waiting for orchestrator ]</div>';
+    bLogEl.innerHTML = '<div class="log-line dim">[ waiting for orchestrator ]</div>';
+
+    aTaskEl.textContent = 'Awaiting assignment...';
+    bTaskEl.textContent = 'Awaiting assignment...';
+    setStatus('a', 's-idle', 'IDLE');
+    setStatus('b', 's-idle', 'IDLE');
+    setConf('a', 0);
+    setConf('b', 0);
+    setDbNum(300, false);
+    dbNumEl.style.color = 'var(--purple)';
+    dbHistEl.innerHTML = '<div class="db-hist-line dim">— no writes yet —</div>';
+    dbLockEl.className = 'lock-none';
+    dbLockEl.innerHTML = '🔓 UNLOCKED — no transaction in progress';
+
+    for (let i = 0; i < 12; i++) {
+      tl('tla'+i,''); tl('tlb'+i,'');
+    }
+
+    crashEl.classList.remove('visible');
+    fixEl.classList.remove('visible');
+    setBanner(0, 'Waiting — press <strong>Next Step</strong> to begin');
+    stepNumEl.textContent = 'STEP 0 / ' + TOTAL;
+  }
+
+  /* ── FIX TABS ──────────────────────────────── */
+  function showTab(name) {
+    document.getElementById('fixPython').style.display  = name==='python'  ? 'block' : 'none';
+    document.getElementById('fixSQL').style.display     = name==='sql'     ? 'block' : 'none';
+    document.getElementById('fixPattern').style.display = name==='pattern' ? 'block' : 'none';
+    document.querySelectorAll('.fix-tab').forEach((t,i) => {
+      t.classList.toggle('active', ['python','sql','pattern'][i]===name);
+    });
+  }
+</script>
+</body>
+</html>
