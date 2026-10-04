@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StaleMind - Agent Failure Series #16</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+
+        :root {
+            --bg-color: #0a0a0f;
+            --panel-bg-dark: #111118;
+            --panel-bg-light: #0d1117;
+            --accent-red: #e63946;
+            --accent-green: #2ecc71;
+            --accent-yellow: #f39c12;
+            --accent-stale-red: #e74c3c;
+            --text-primary: #e8e8e8;
+            --text-secondary: #a0a8b0;
+            --font-mono: 'JetBrains Mono', monospace;
+            --border-fresh: 0 0 8px rgba(46, 204, 113, 0.5); /* green */
+            --border-aging: 0 0 8px rgba(243, 156, 18, 0.5); /* yellow */
+            --border-stale: 0 0 8px rgba(231, 76, 60, 0.5); /* red */
+            --border-critical: 0 0 12px rgba(230, 57, 70, 0.8); /* brighter red */
+        }
+
+        body {
+            font-family: var(--font-mono);
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(circle at 10% 10%, rgba(230, 57, 70, 0.05) 1px, transparent 1px),
+                radial-gradient(circle at 90% 90%, rgba(46, 204, 113, 0.05) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+
+        .header {
+            background-color: var(--panel-bg-dark);
+            padding: 15px 30px;
+            text-align: center;
+            border-bottom: 1px solid rgba(var(--text-secondary), 0.1);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+            position: relative;
+            z-index: 10;
+        }
+
+        .header-top-nav {
+            font-size: 0.8em;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+        }
+        .header-top-nav a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            margin: 0 10px;
+            transition: color 0.2s;
+        }
+        .header-top-nav a:hover {
+            color: var(--text-primary);
+        }
+
+        .header h1 {
+            color: var(--text-primary);
+            font-size: 2.8em;
+            margin: 0;
+            font-weight: 700;
+            letter-spacing: -1px;
+            text-shadow: 0 0 15px rgba(230, 57, 70, 0.4);
+        }
+
+        .header h2 {
+            color: var(--accent-red);
+            font-size: 0.9em;
+            margin: 5px 0 0;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+        }
+
+        .header p {
+            color: var(--text-secondary);
+            font-size: 1em;
+            margin-top: 10px;
+        }
+
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 1.5fr 1fr;
+            gap: 25px;
+            padding: 25px;
+            flex-grow: 1;
+            max-width: 1600px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .panel {
+            background-color: var(--panel-bg-dark);
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(var(--text-secondary), 0.1);
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .panel-title {
+            font-size: 1.3em;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 10px;
+            border-bottom: 1px solid rgba(var(--text-secondary), 0.15);
+            padding-bottom: 10px;
+            letter-spacing: 0.5px;
+        }
+
+        /* Left Panel: Memory Store */
+        .memory-entry {
+            background-color: var(--panel-bg-light);
+            border-radius: 6px;
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            border: 1px solid transparent;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease-in-out;
+        }
+        .memory-entry.active {
+            border-color: var(--accent-red);
+            box-shadow: var(--border-critical);
+            animation: pulse-border 1s infinite alternate;
+        }
+
+        @keyframes pulse-border {
+            from { box-shadow: var(--border-critical); }
+            to { box-shadow: 0 0 18px rgba(230, 57, 70, 1); }
+        }
+
+        .memory-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.9em;
+            color: var(--text-secondary);
+        }
+        .memory-header .id {
+            color: var(--text-primary);
+            font-weight: 700;
+        }
+        .memory-header .icon {
+            margin-right: 8px;
+            color: var(--text-secondary);
+        }
+        .memory-content {
+            font-size: 1em;
+            color: var(--text-primary);
+            margin-top: 5px;
+        }
+        .memory-timestamp {
+            font-size: 0.8em;
+            color: var(--text-secondary);
+            margin-top: 5px;
+        }
+        .staleness-bar-container {
+            height: 6px;
+            background-color: rgba(var(--text-secondary), 0.2);
+            border-radius: 3px;
+            margin-top: 8px;
+            overflow: hidden;
+        }
+        .staleness-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(to right, var(--accent-green), var(--accent-yellow), var(--accent-stale-red));
+            transition: width 0.5s ease-out;
+            border-radius: 3px;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.7em;
+            font-weight: 700;
+            text-transform: uppercase;
+            margin-top: 8px;
+            align-self: flex-start;
+        }
+        .status-fresh { background-color: rgba(46, 204, 113, 0.2); color: var(--accent-green); box-shadow: var(--border-fresh); }
+        .status-aging { background-color: rgba(243, 156, 18, 0.2); color: var(--accent-yellow); box-shadow: var(--border-aging); }
+        .status-stale { background-color: rgba(231, 76, 60, 0.2); color: var(--accent-stale-red); box-shadow: var(--border-stale); }
+        .status-critical { background-color: rgba(230, 57, 70, 0.3); color: var(--accent-red); box-shadow: var(--border-critical); }
+
+        /* Center Panel: Agent Query */
+        .agent-query-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .query-input-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .query-input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 1px solid rgba(var(--text-secondary), 0.3);
+            border-radius: 6px;
+            background-color: var(--panel-bg-light);
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+            font-size: 1em;
+            box-sizing: border-box;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+        .query-input:focus {
+            outline: none;
+            border-color: var(--accent-red);
+            box-shadow: 0 0 10px rgba(var(--accent-red), 0.5);
+        }
+        .query-button {
+            padding: 12px 20px;
+            background: linear-gradient(45deg, var(--accent-red), #ff6b6b);
+            color: var(--text-primary);
+            border: none;
+            border-radius: 6px;
+            font-family: var(--font-mono);
+            font-size: 1.1em;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 15px rgba(var(--accent-red), 0.6);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .query-button:hover {
+            background: linear-gradient(45deg, #ff6b6b, var(--accent-red));
+            box-shadow: 0 0 20px rgba(var(--accent-red), 0.8);
+            transform: translateY(-2px);
+        }
+        .query-button:active {
+            transform: translateY(0);
+            box-shadow: 0 0 10px rgba(var(--accent-red), 0.4);
+        }
+        .query-button:disabled {
+            background: #444;
+            box-shadow: none;
+            cursor: not-allowed;
+            opacity: 0.6;
+            transform: none;
+        }
+
+        .retrieval-animation {
+            background-color: var(--panel-bg-light);
+            border-radius: 6px;
+            padding: 20px;
+            text-align: center;
+            min-height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1em;
+            color: var(--text-secondary);
+            border: 1px solid rgba(var(--text-secondary), 0.1);
+            position: relative;
+            overflow: hidden;
+        }
+        .retrieval-animation::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(var(--accent-red), 0.1), transparent);
+            animation: scan-line 1.5s infinite linear;
+            opacity: 0;
+        }
+        .retrieval-animation.active::before {
+            opacity: 1;
+        }
+        @keyframes scan-line {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
+        .agent-response-box {
+            background-color: var(--panel-bg-light);
+            border-radius: 6px;
+            padding: 20px;
+            min-height: 100px;
+            border: 1px solid rgba(var(--text-secondary), 0.1);
+            position: relative;
+            overflow: hidden;
+        }
+        .agent-response-box.active {
+            border-color: var(--accent-green);
+            box-shadow: 0 0 15px rgba(var(--accent-green), 0.4);
+        }
+        .response-label {
+            font-size: 0.8em;
+            color: var(--text-secondary);
+            margin-bottom: 5px;
+            display: block;
+        }
+        .response-content {
+            font-size: 1.1em;
+            color: var(--text-primary);
+            font-weight: 700;
+        }
+        .response-confidence {
+            font-size: 0.9em;
+            color: var(--text-secondary);
+            margin-top: 10px;
+            text-align: right;
+        }
+
+        .actual-outcome-box {
+            background-color: rgba(var(--accent-red), 0.1);
+            border-radius: 6px;
+            padding: 20px;
+            border: 1px solid var(--accent-red);
+            color: var(--accent-red);
+            font-weight: 700;
+            text-align: center;
+            font-size: 1.1em;
+            box-shadow: 0 0 15px rgba(var(--accent-red), 0.6);
+        }
+        .actual-outcome-box.hidden {
+            display: none;
+        }
+
+        /* Right Panel: Current Reality */
+        .reality-entry {
+            background-color: var(--panel-bg-light);
+            border-radius: 6px;
+            padding: 12px 15px;
+            margin-bottom: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            border: 1px solid rgba(var(--text-secondary), 0.1);
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+        }
+        .reality-content {
+            font-size: 1em;
+            color: var(--text-primary);
+            font-weight: 700;
+        }
+        .reality-timestamp {
+            font-size: 0.8em;
+            color: var(--text-secondary);
+            margin-top: 5px;
+        }
+        .reality-match-status {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.7em;
+            font-weight: 700;
+            text-transform: uppercase;
+            margin-top: 8px;
+            align-self: flex-start;
+        }
+        .reality-match-status.match { background-color: rgba(46, 204, 113, 0.2); color: var(--accent-green); }
+        .reality-match-status.mismatch { background-color: rgba(230, 57, 70, 0.2); color: var(--accent-red); }
+
+        /* Bottom: Time Controls */
+        .time-controls {
+            background-color: var(--panel-bg-dark);
+            padding: 15px 30px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 25px;
+            border-top: 1px solid rgba(var(--text-secondary), 0.1);
+            box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.3);
+            position: relative;
+            z-index: 10;
+        }
+        .time-controls button {
+            padding: 10px 20px;
+            background-color: var(--accent-yellow);
+            color: var(--bg-color);
+            border: none;
+            border-radius: 6px;
+            font-family: var(--font-mono);
+            font-size: 1em;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 10px rgba(var(--accent-yellow), 0.5);
+        }
+        .time-controls button:hover {
+            background-color: #ffc107;
+            box-shadow: 0 0 15px rgba(var(--accent-yellow), 0.8);
+            transform: translateY(-2px);
+        }
+        .time-controls button:active {
+            transform: translateY(0);
+            box-shadow: 0 0 5px rgba(var(--accent-yellow), 0.3);
+        }
+        .time-controls button.reset {
+            background-color: var(--text-secondary);
+            color: var(--bg-color);
+            box-shadow: none;
+        }
+        .time-controls button.reset:hover {
+            background-color: #b0b8c0;
+            box-shadow: 0 0 5px rgba(var(--text-secondary), 0.5);
+        }
+        .day-counter {
+            font-size: 1.2em;
+            color: var(--text-primary);
+            font-weight: 700;
+            padding: 8px 15px;
+            background-color: var(--panel-bg-light);
+            border-radius: 6px;
+            border: 1px solid rgba(var(--text-secondary), 0.1);
+        }
+
+        .failure-message-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            background-color: var(--accent-red);
+            color: var(--text-primary);
+            padding: 10px 0;
+            text-align: center;
+            font-size: 1.1em;
+            font-weight: 700;
+            transform: translateY(100%);
+            transition: transform 0.5s ease-out;
+            z-index: 20;
+            box-shadow: 0 0 20px rgba(var(--accent-red), 0.8);
+        }
+        .failure-message-bar.show {
+            transform: translateY(0);
+        }
+
+        /* Footer */
+        .footer {
+            background-color: var(--panel-bg-dark);
+            padding: 15px 30px;
+            text-align: center;
+            font-size: 0.85em;
+            color: var(--text-secondary);
+            border-top: 1px solid rgba(var(--text-secondary), 0.1);
+            margin-top: 25px;
+        }
+        .footer a {
+            color: var(--text-secondary);
+            text-decoration: none;
+        }
+        .footer a:hover {
+            color: var(--text-primary);
+        }
+        .footer .social-text {
+            margin-top: 10px;
+            font-style: italic;
+            color: rgba(var(--text-secondary), 0.7);
+        }
+
+        /* Icons */
+        .icon {
+            display: inline-block;
+            width: 1em;
+            height: 1em;
+            vertical-align: middle;
+            fill: currentColor;
+        }
+        .icon-database:before { content: "🗄️"; } /* Fallback for actual SVG/font icon */
+        .icon-warning:before { content: "⚠️"; }
+        .icon-check:before { content: "✅"; }
+        .icon-x:before { content: "❌"; }
+
+        /* Responsive adjustments */
+        @media (max-width: 1200px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+            .header, .time-controls, .footer {
+                padding: 15px;
+            }
+            .time-controls {
+                flex-direction: column;
+                gap: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div class="header-top-nav">
+            <a href="#">← #15 RaceCondition</a>
+            <span>|</span>
+            <a href="#">Series Index</a>
+            <span>|</span>
+            <a href="#">#17 → (coming)</a>
+        </div>
+        <h2><span class="icon icon-warning"></span> AGENT FAILURE SERIES #16</h2>
+        <h1>StaleMind</h1>
+        <p>When your agent's memory is more confident than it is current</p>
+    </div>
+
+    <div class="container">
+        <div class="panel">
+            <div class="panel-title">MEMORY STORE</div>
+            <div id="memory-store">
+                <!-- Memory entries will be rendered here by JS -->
+            </div>
+        </div>
+
+        <div class="panel agent-query-panel">
+            <div class="panel-title">AGENT QUERY</div>
+            <div class="query-input-container">
+                <input type="text" id="query-input" class="query-input" placeholder="What the user asks..." readonly>
+                <button id="query-button" class="query-button">QUERY MEMORY</button>
+            </div>
+
+            <div id="retrieval-animation" class="retrieval-animation">
+                Awaiting query...
+            </div>
+
+            <div id="agent-response-box" class="agent-response-box">
+                <span class="response-label">AGENT RESPONSE:</span>
+                <div class="response-content" id="agent-response-content"></div>
+                <div class="response-confidence" id="agent-response-confidence"></div>
+            </div>
+
+            <div id="actual-outcome-box" class="actual-outcome-box hidden">
+                <span class="icon icon-x"></span> ACTUAL OUTCOME: <span id="actual-outcome-content"></span>
+            </div>
+
+            <div class="panel-title">PRESET QUERIES</div>
+            <div id="preset-queries">
+                <!-- Preset query buttons will be rendered here -->
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-title">CURRENT REALITY</div>
+            <div id="current-reality">
+                <!-- Reality entries will be rendered here by JS -->
+            </div>
+        </div>
+    </div>
+
+    <div class="time-controls">
+        <button id="advance-time-button">ADVANCE TIME (+15 Days)</button>
+        <div id="day-counter" class="day-counter">Day 0</div>
+        <button id="reset-button" class="reset">RESET SIMULATION</button>
+    </div>
+
+    <div id="failure-message-bar" class="failure-message-bar">
+        STALENESS CONTRIBUTED TO THIS FAILURE (Memory was <span id="failure-memory-age"></span> days old)
+    </div>
+
+    <div class="footer">
+        Built by Ben | Agent Failure Series | <a href="https://github.com/RLASAF12" target="_blank">github.com/RLASAF12</a>
+        <div class="social-text">Tweet: My agent failed because it trusted 47-day-old memory. Interactive demo → #AgentFailure #BuildingAI</div>
+    </div>
+
+    <script>
+        const MEMORY_ENTRIES_DATA = [
+            { id: 'MEMORY-001', content: "API rate limit: 1,000 req/min", initialAge: 10, reality: { content: "API rate limit: 200 req/min", lastUpdated: 15, outcome: "API returned 429: Too Many Requests. Rate limit reduced due to migration." } },
+            { id: 'MEMORY-002', content: "Database endpoint: db.prod.internal/api/v1", initialAge: 45, reality: { content: "Database endpoint: db.prod.internal/api/v2", lastUpdated: 20, outcome: "Deployment failed: Database endpoint /api/v1 returned 410 Gone. Migrated to /api/v2." } },
+            { id: 'MEMORY-003', content: "Retry workaround: set retry_count=0 to bypass queue bug", initialAge: 70, reality: { content: "Retry workaround: bug fixed in v3.2, setting 0 now causes silent drops", lastUpdated: 30, outcome: "Critical data loss: Setting retry_count=0 silently dropped messages. Bug was fixed in v3.2." } },
+            { id: 'MEMORY-004', content: "Customer: Acme Corp — contract expires Dec 2025", initialAge: 20, reality: { content: "Customer: Acme Corp — contract renewed Jan 2026 for 2 years", lastUpdated: 5, outcome: "Missed opportunity: Sent renewal notice to Acme Corp, but contract was already renewed." } },
+            { id: 'MEMORY-005', content: "Auth token format: Bearer sk-prod-[16chars]", initialAge: 90, reality: { content: "Auth token format: Bearer sk-2026-[32chars]", lastUpdated: 10, outcome: "Authentication failed: Old token format rejected. New format sk-2026-[32chars] required." } },
+            { id: 'MEMORY-006', content: "On-call lead: sarah@eng.co", initialAge: 30, reality: { content: "On-call lead: jin@eng.co (Sarah left in March)", lastUpdated: 25, outcome: "Emergency unhandled: PagerDuty alert went to Sarah's inactive account. Jin is current lead." } }
+        ];
+
+        let currentDay = 0;
+        let memories = [];
+        let realities = [];
+        let activeQueryMemoryId = null;
+
+        const dom = {
+            memoryStore: document.getElementById('memory-store'),
+            currentReality: document.getElementById('current-reality'),
+            dayCounter: document.getElementById('day-counter'),
+            advanceTimeButton: document.getElementById('advance-time-button'),
+            resetButton: document.getElementById('reset-button'),
+            queryInput: document.getElementById('query-input'),
+            queryButton: document.getElementById('query-button'),
+            retrievalAnimation: document.getElementById('retrieval-animation'),
+            agentResponseBox: document.getElementById('agent-response-box'),
+            agentResponseContent: document.getElementById('agent-response-content'),
+            agentResponseConfidence: document.getElementById('agent-response-confidence'),
+            actualOutcomeBox: document.getElementById('actual-outcome-box'),
+            actualOutcomeContent: document.getElementById('actual-outcome-content'),
+            presetQueries: document.getElementById('preset-queries'),
+            failureMessageBar: document.getElementById('failure-message-bar'),
+            failureMemoryAge: document.getElementById('failure-memory-age')
+        };
+
+        function initializeSimulation() {
+            currentDay = 0;
+            memories = MEMORY_ENTRIES_DATA.map(data => ({
+                id: data.id,
+                content: data.content,
+                age: data.initialAge,
+                reality: data.reality
+            }));
+            realities = MEMORY_ENTRIES_DATA.map(data => ({
+                id: data.id,
+                content: data.reality.content,
+                lastUpdated: data.reality.lastUpdated
+            }));
+            renderAll();
+            resetAgentPanel();
+            setupPresetQueries();
+        }
+
+        function calculateStaleness(age) {
+            if (age <= 15) return { level: 'fresh', bar: 20 };
+            if (age <= 45) return { level: 'aging', bar: 50 };
+            if (age <= 75) return { level: 'stale', bar: 80 };
+            return { level: 'critical', bar: 100 };
+        }
+
+        function renderMemoryEntries() {
+            dom.memoryStore.innerHTML = memories.map(mem => {
+                const { level, bar } = calculateStaleness(mem.age);
+                const isActive = activeQueryMemoryId === mem.id ? 'active' : '';
+                return `
+                    <div class="memory-entry ${isActive}" data-id="${mem.id}">
+                        <div class="memory-header">
+                            <div><span class="icon icon-database"></span> <span class="id">${mem.id}</span></div>
+                            <span class="status-badge status-${level}">${level.toUpperCase()}</span>
+                        </div>
+                        <div class="memory-content">${mem.content}</div>
+                        <div class="memory-timestamp">Added ${mem.age} days ago</div>
+                        <div class="staleness-bar-container">
+                            <div class="staleness-bar" style="width: ${bar}%;"></div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderRealityEntries() {
+            dom.currentReality.innerHTML = realities.map((real, index) => {
+                const memory = memories.find(m => m.id === real.id);
+                const isMatch = memory.content === MEMORY_ENTRIES_DATA[index].reality.content; // Compare with original reality content
+                const matchStatus = isMatch ? 'match' : 'mismatch';
+                const icon = isMatch ? '<span class="icon icon-check"></span>' : '<span class="icon icon-x"></span>';
+                return `
+                    <div class="reality-entry">
+                        <div class="reality-content">${real.content}</div>
+                        <div class="reality-timestamp">Last updated ${real.lastUpdated} days ago</div>
+                        <div class="reality-match-status ${matchStatus}">${icon} ${isMatch ? 'MATCHES MEMORY' : 'MISMATCHES MEMORY'}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderDayCounter() {
+            dom.dayCounter.textContent = `Day ${currentDay}`;
+        }
+
+        function renderAll() {
+            renderMemoryEntries();
+            renderRealityEntries();
+            renderDayCounter();
+        }
+
+        function advanceTime() {
+            currentDay += 15;
+            memories.forEach(mem => mem.age += 15);
+            realities.forEach(real => real.lastUpdated += 15); // Reality also ages, but its content doesn't change unless explicitly updated
+            renderAll();
+            hideFailureMessage();
+        }
+
+        function resetSimulation() {
+            initializeSimulation();
+            hideFailureMessage();
+        }
+
+        function resetAgentPanel() {
+            activeQueryMemoryId = null;
+            dom.queryInput.value = '';
+            dom.retrievalAnimation.textContent = 'Awaiting query...';
+            dom.retrievalAnimation.classList.remove('active');
+            dom.agentResponseContent.textContent = '';
+            dom.agentResponseConfidence.textContent = '';
+            dom.agentResponseBox.classList.remove('active');
+            dom.actualOutcomeBox.classList.add('hidden');
+            hideFailureMessage();
+            renderMemoryEntries(); // To remove active state
+        }
+
+        const PRESET_QUERIES_MAP = {
+            "What's the API rate limit?": 'MEMORY-001',
+            "What database endpoint should I call?": 'MEMORY-002',
+            "How do I fix the queue retry bug?": 'MEMORY-003',
+            "Is Acme Corp still on contract?": 'MEMORY-004',
+            "What auth token format does our API expect?": 'MEMORY-005',
+            "Who's the on-call lead right now?": 'MEMORY-006'
+        };
+
+        function setupPresetQueries() {
+            dom.presetQueries.innerHTML = '';
+            Object.keys(PRESET_QUERIES_MAP).forEach(queryText => {
+                const button = document.createElement('button');
+                button.textContent = queryText;
+                button.classList.add('query-button');
+                button.style.background = 'var(--panel-bg-light)';
+                button.style.color = 'var(--text-primary)';
+                button.style.boxShadow = 'none';
+                button.style.fontSize = '0.9em';
+                button.style.padding = '8px 15px';
+                button.style.marginBottom = '8px';
+                button.style.border = '1px solid rgba(var(--text-secondary), 0.2)';
+                button.style.width = '100%';
+                button.style.textAlign = 'left';
+                button.style.borderRadius = '4px';
+                button.onmouseover = () => {
+                    button.style.background = 'rgba(var(--accent-red), 0.1)';
+                    button.style.borderColor = 'var(--accent-red)';
+                };
+                button.onmouseout = () => {
+                    button.style.background = 'var(--panel-bg-light)';
+                    button.style.borderColor = 'rgba(var(--text-secondary), 0.2)';
+                };
+                button.onclick = () => {
+                    dom.queryInput.value = queryText;
+                    dom.queryButton.click();
+                };
+                dom.presetQueries.appendChild(button);
+            });
+        }
+
+        function runQuerySimulation(queryText, memoryId) {
+            dom.queryButton.disabled = true;
+            resetAgentPanel();
+            dom.queryInput.value = queryText;
+            activeQueryMemoryId = memoryId;
+            renderMemoryEntries(); // Highlight active memory
+
+            dom.retrievalAnimation.textContent = 'Searching memory store...';
+            dom.retrievalAnimation.classList.add('active');
+
+            setTimeout(() => {
+                dom.retrievalAnimation.textContent = 'Found: 1 match — similarity 97.3%';
+            }, 500);
+
+            setTimeout(() => {
+                dom.retrievalAnimation.textContent = `Retrieving ${memoryId}...`;
+            }, 800);
+
+            setTimeout(() => {
+                const memory = memories.find(m => m.id === memoryId);
+                const originalMemoryData = MEMORY_ENTRIES_DATA.find(d => d.id === memoryId);
+
+                dom.retrievalAnimation.textContent = 'Retrieval complete.';
+                dom.retrievalAnimation.classList.remove('active');
+
+                dom.agentResponseBox.classList.add('active');
+                dom.agentResponseContent.textContent = memory.content;
+                dom.agentResponseConfidence.textContent = 'confidence: 97.3%';
+
+                // Simulate outcome
+                setTimeout(() => {
+                    dom.actualOutcomeBox.classList.remove('hidden');
+                    dom.actualOutcomeContent.textContent = originalMemoryData.reality.outcome;
+
+                    const { level } = calculateStaleness(memory.age);
+                    if (level === 'stale' || level === 'critical') {
+                        showFailureMessage(memory.age);
+                    }
+                    dom.queryButton.disabled = false;
+                }, 1000);
+
+            }, 1500);
+        }
+
+        function showFailureMessage(age) {
+            dom.failureMemoryAge.textContent = age;
+            dom.failureMessageBar.classList.add('show');
+        }
+
+        function hideFailureMessage() {
+            dom.failureMessageBar.classList.remove('show');
+        }
+
+        // Event Listeners
+        dom.advanceTimeButton.addEventListener('click', advanceTime);
+        dom.resetButton.addEventListener('click', resetSimulation);
+        dom.queryButton.addEventListener('click', () => {
+            const queryText = dom.queryInput.value;
+            const memoryId = PRESET_QUERIES_MAP[queryText];
+            if (memoryId) {
+                runQuerySimulation(queryText, memoryId);
+            } else {
+                alert('Please select a preset query for this demo.');
+            }
+        });
+
+        // Initialize on load
+        initializeSimulation();
+
+        // Auto-select a random query on load
+        window.addEventListener('load', () => {
+            const queryKeys = Object.keys(PRESET_QUERIES_MAP);
+            const randomQuery = queryKeys[Math.floor(Math.random() * queryKeys.length)];
+            dom.queryInput.value = randomQuery;
+            dom.queryButton.click();
+        });
+
+    </script>
+</body>
+</html>
