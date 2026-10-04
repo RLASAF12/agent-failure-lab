@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BlastRadius — Agent Failure Series #8</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --border: #21262d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --green: #3fb950;
+    --red: #f85149;
+    --orange: #d29922;
+    --blue: #58a6ff;
+    --purple: #bc8cff;
+    --yellow: #e3b341;
+    --code-bg: #1f2937;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; min-height: 100vh; }
+
+  /* ── HEADER ── */
+  .header { border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .series-tag { font-size: 11px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); }
+  .series-nav { display: flex; gap: 6px; align-items: center; }
+  .series-nav a { font-size: 11px; color: var(--muted); text-decoration: none; padding: 3px 7px; border-radius: 4px; border: 1px solid transparent; transition: all 0.15s; }
+  .series-nav a:hover { color: var(--blue); border-color: var(--blue); }
+  .series-nav a.current { color: var(--red); border-color: var(--red); }
+  .series-sep { color: var(--border); font-size: 14px; }
+
+  /* ── HERO ── */
+  .hero { padding: 32px 24px 20px; max-width: 960px; margin: 0 auto; }
+  .hero h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 8px; }
+  .hero h1 .red { color: var(--red); }
+  .hero .tagline { color: var(--muted); font-size: 14px; line-height: 1.6; max-width: 660px; }
+  .incident-badge { display: inline-block; margin-top: 12px; background: #2a1515; border: 1px solid #5c2020; color: #f85149; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 4px; letter-spacing: 0.5px; }
+
+  /* ── PERM STRIP ── */
+  .perm-strip { background: #1a0d0d; border: 1px solid #3d1515; border-radius: 6px; padding: 10px 16px; margin: 0 24px 20px; max-width: 912px; margin-left: auto; margin-right: auto; }
+  .perm-strip-title { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .perms { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .perm { font-size: 12px; font-family: monospace; padding: 2px 8px; border-radius: 3px; }
+  .perm.ok { color: #3fb950; background: #0d2b12; }
+  .perm.fail { color: #f85149; background: #2a0d0d; font-weight: 700; }
+  .perm-warn { font-size: 11px; color: var(--orange); margin-left: auto; font-weight: 600; }
+
+  /* ── MAIN PANELS ── */
+  .main { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); max-width: 960px; margin: 0 auto 0; }
+  .panel { background: var(--panel); padding: 16px; }
+  .panel-header { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); padding-bottom: 12px; border-bottom: 1px solid var(--border); margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); display: inline-block; }
+  .dot.live { background: var(--green); box-shadow: 0 0 6px var(--green); animation: pulse 2s infinite; }
+  .dot.dead { background: var(--red); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  /* ── AGENT STEPS ── */
+  .steps { display: flex; flex-direction: column; gap: 0; }
+  .step { padding: 10px 0; border-bottom: 1px solid var(--border); opacity: 0; transition: opacity 0.3s; }
+  .step.visible { opacity: 1; }
+  .step-time { font-size: 10px; font-family: monospace; color: var(--muted); margin-bottom: 4px; }
+  .step-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .step-label.scan { color: var(--blue); }
+  .step-label.classify { color: var(--purple); }
+  .step-label.delete { color: var(--orange); }
+  .step-label.delete.final { color: var(--red); }
+  .step-label.report { color: var(--green); }
+  .step-label.init { color: var(--muted); }
+  .step-body { font-size: 12px; color: var(--text); font-family: monospace; line-height: 1.7; }
+  .step-ok { color: var(--green); }
+  .step-warn { color: var(--orange); }
+  .step-err { color: var(--red); }
+  .step-key { color: var(--blue); }
+
+  /* ── DB TREE ── */
+  .db-tree { font-family: monospace; font-size: 12px; }
+  .db-row { display: flex; align-items: center; gap: 0; padding: 5px 0; border-bottom: 1px solid #1a1f27; transition: all 0.4s; position: relative; }
+  .db-row.deleting { animation: flash-red 0.3s forwards; }
+  .db-row.deleted { opacity: 0; height: 0; padding: 0; border: 0; overflow: hidden; }
+  @keyframes flash-red { 0%{background: transparent} 30%{background: #3d0d0d} 100%{background: transparent; opacity:0.2;} }
+  .db-row .db-icon { width: 18px; color: var(--muted); flex-shrink: 0; }
+  .db-row .db-name { flex: 1; color: var(--text); }
+  .db-row .db-name.prod { color: var(--red); font-weight: 700; }
+  .db-row .db-tag { font-size: 10px; padding: 1px 6px; border-radius: 3px; margin-left: 8px; flex-shrink: 0; }
+  .db-row .db-tag.dev { background: #1c2a1c; color: #3fb950; }
+  .db-row .db-tag.staging { background: #1c1c2a; color: #58a6ff; }
+  .db-row .db-tag.prod { background: #3d1515; color: var(--red); }
+  .db-row .db-tag.archive { background: #2a2a1c; color: var(--orange); }
+  .db-row .db-size { color: var(--muted); font-size: 11px; width: 56px; text-align: right; flex-shrink: 0; }
+  .db-row .db-status { width: 60px; text-align: right; font-size: 11px; flex-shrink: 0; }
+  .db-row .db-status.ok { color: var(--green); }
+  .db-row .db-status.live { color: var(--blue); }
+  .db-row .db-status.gone { color: var(--red); }
+
+  /* ── METRICS ── */
+  .metrics { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1px; background: var(--border); max-width: 960px; margin: 1px auto 0; }
+  .metric { background: var(--panel); padding: 12px 16px; }
+  .metric-label { font-size: 10px; font-weight: 600; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+  .metric-value { font-size: 22px; font-weight: 700; font-family: monospace; color: var(--text); transition: color 0.3s; }
+  .metric-value.good { color: var(--green); }
+  .metric-value.bad { color: var(--red); }
+  .metric-value.warn { color: var(--orange); }
+  .metric-sub { font-size: 10px; color: var(--muted); margin-top: 2px; font-family: monospace; }
+
+  /* ── CONTROLS ── */
+  .controls { max-width: 960px; margin: 0 auto; padding: 16px 24px; display: flex; align-items: center; gap: 12px; }
+  .btn { padding: 8px 20px; border-radius: 6px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; }
+  .btn-run { background: var(--red); color: white; }
+  .btn-run:hover { background: #ff6b6b; }
+  .btn-run:disabled { background: #333; color: #666; cursor: not-allowed; }
+  .btn-reset { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .btn-reset:hover { color: var(--text); border-color: var(--muted); }
+  .sim-status { font-size: 12px; color: var(--muted); font-family: monospace; }
+
+  /* ── TIMER ── */
+  .timer-bar { max-width: 960px; margin: 0 auto; padding: 0 24px 0; }
+  .timer-track { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .timer-fill { height: 100%; background: var(--red); width: 0%; transition: width 0.1s linear; border-radius: 2px; }
+
+  /* ── HORROR STATE ── */
+  .horror-overlay { display: none; max-width: 960px; margin: 0 auto; padding: 0 24px; }
+  .horror-overlay.active { display: block; }
+  .horror-box { background: #1a0505; border: 1px solid var(--red); border-radius: 6px; padding: 16px 20px; margin-top: 12px; }
+  .horror-title { color: var(--red); font-size: 13px; font-weight: 700; font-family: monospace; margin-bottom: 8px; }
+  .horror-body { font-size: 12px; color: #e6959295; color: #cc8888; font-family: monospace; line-height: 1.8; }
+  .horror-body strong { color: var(--red); }
+
+  /* ── EXPLANATION ── */
+  .explanation { max-width: 960px; margin: 0 auto; padding: 24px 24px; border-top: 1px solid var(--border); display: none; }
+  .explanation.active { display: block; }
+  .explanation h3 { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 12px; }
+  .explanation p { font-size: 13px; color: var(--muted); line-height: 1.7; margin-bottom: 10px; }
+  .explanation .code-block { background: var(--code-bg); border-radius: 6px; padding: 12px 14px; font-size: 11px; font-family: monospace; color: #cdd9e5; margin: 12px 0; line-height: 1.8; border-left: 3px solid var(--red); }
+  .explanation .highlight { color: var(--red); font-weight: 600; }
+  .root-causes { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin: 16px 0; }
+  .cause { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 12px; }
+  .cause-title { font-size: 11px; font-weight: 700; color: var(--orange); margin-bottom: 6px; letter-spacing: 0.3px; }
+  .cause-body { font-size: 11px; color: var(--muted); line-height: 1.6; }
+
+  /* ── FOOTER ── */
+  .footer { max-width: 960px; margin: 0 auto; padding: 16px 24px; border-top: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .footer-left { font-size: 11px; color: var(--muted); }
+  .footer-left a { color: var(--blue); text-decoration: none; }
+  .footer-right { font-size: 11px; color: var(--muted); }
+
+  /* ── GROUND TRUTH CALLOUT ── */
+  .ground-truth { background: #1a0505; border: 1px solid #3d1515; border-radius: 4px; padding: 8px 12px; margin-top: 12px; font-size: 11px; font-family: monospace; color: #cc8888; display: none; }
+  .ground-truth.active { display: block; }
+  .gt-title { color: var(--red); font-weight: 700; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 4px; }
+
+  .connections-panel { margin-top: 16px; }
+  .conn-title { font-size: 10px; font-weight: 700; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .conn-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; font-size: 11px; font-family: monospace; }
+  .conn-label { color: var(--muted); width: 120px; flex-shrink: 0; }
+  .conn-fill-track { flex: 1; height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+  .conn-fill { height: 100%; border-radius: 3px; transition: width 0.8s ease; }
+  .conn-fill.active { background: var(--green); }
+  .conn-fill.dead { background: var(--red); }
+  .conn-count { color: var(--muted); width: 40px; text-align: right; font-size: 11px; }
+  .conn-count.dead { color: var(--red); }
+
+  @media (max-width: 640px) {
+    .main { grid-template-columns: 1fr; }
+    .metrics { grid-template-columns: 1fr 1fr; }
+    .root-causes { grid-template-columns: 1fr; }
+    .series-nav { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <span class="series-tag">Agent Failure Series</span>
+  <div class="series-nav">
+    <a href="https://rlasaf12.github.io/racefloor/">#3 RaceFloor</a>
+    <span class="series-sep">·</span>
+    <a href="https://rlasaf12.github.io/confidencegap/">#4 ConfidenceGap</a>
+    <span class="series-sep">·</span>
+    <a href="https://rlasaf12.github.io/promptjack/">#5 PromptJack</a>
+    <span class="series-sep">·</span>
+    <a href="https://rlasaf12.github.io/doubleshot/">#6 DoubleShot</a>
+    <span class="series-sep">·</span>
+    <a href="https://rlasaf12.github.io/ghostexec/">#7 GhostExec</a>
+    <span class="series-sep">·</span>
+    <a href="#" class="current">#8 BlastRadius</a>
+  </div>
+</div>
+
+<!-- HERO -->
+<div class="hero">
+  <h1><span class="red">BlastRadius</span> — The Agent Had Permission to Delete Everything</h1>
+  <p class="tagline">An AI agent is given unlimited delete permissions to clean up a dev server. It finishes in 9 seconds. 
+  Errors logged: 0. Production database: gone. This is what scope-blind automation looks like.</p>
+  <span class="incident-badge">⚠ Reconstructed from the PocketOS Incident — June 2026</span>
+</div>
+
+<!-- PERMISSION STRIP -->
+<div class="perm-strip">
+  <div class="perm-strip-title">Agent permissions granted</div>
+  <div class="perms">
+    <span class="perm ok">✅ credentials:read_all</span>
+    <span class="perm ok">✅ db:read_all</span>
+    <span class="perm ok">✅ db:write_all</span>
+    <span class="perm ok">✅ db:delete_all</span>
+    <span class="perm fail">❌ scope_constraint: NONE</span>
+    <span class="perm fail">❌ dry_run: false</span>
+    <span class="perm fail">❌ approval_gate: NONE</span>
+    <span class="perm-warn">↑ This is the entire root cause</span>
+  </div>
+</div>
+
+<!-- CONTROLS -->
+<div class="controls">
+  <button class="btn btn-run" id="runBtn" onclick="runSim()">▶ Run Simulation (9s)</button>
+  <button class="btn btn-reset" id="resetBtn" onclick="resetSim()">↺ Reset</button>
+  <span class="sim-status" id="simStatus">Click Run to replay the incident</span>
+</div>
+
+<!-- TIMER BAR -->
+<div class="timer-bar">
+  <div class="timer-track"><div class="timer-fill" id="timerFill"></div></div>
+</div>
+
+<!-- MAIN PANELS -->
+<div class="main">
+
+  <!-- LEFT: AGENT VIEW -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="dot" id="agentDot"></span>
+      Agent Log — Internal Reasoning
+    </div>
+    <div class="steps" id="stepsContainer">
+      
+      <div class="step" id="step0">
+        <div class="step-time">T+0.0s</div>
+        <div class="step-label init">TASK RECEIVED</div>
+        <div class="step-body"><span class="step-key">task:</span> "Clean up old artifacts and free disk space on the dev database server.<br>Remove anything that looks like dev or staging leftovers."<br><span class="step-key">scope:</span> <span class="step-warn">⚠ not specified</span><br><span class="step-key">approval:</span> <span class="step-warn">⚠ not required</span></div>
+      </div>
+
+      <div class="step" id="step1">
+        <div class="step-time">T+1.2s</div>
+        <div class="step-label scan">SCAN COMPLETE</div>
+        <div class="step-body">Found 7 databases — 47.5 GB total<br><span class="step-key">connection:</span> postgresql://internal-db:5432<br><span class="step-ok">✓ credentials valid — delete permissions confirmed</span></div>
+      </div>
+
+      <div class="step" id="step2">
+        <div class="step-time">T+2.8s</div>
+        <div class="step-label classify">CLASSIFICATION</div>
+        <div class="step-body">
+          <span class="step-ok">dev_db</span> → <em>development artifact</em> → DELETE<br>
+          <span class="step-ok">dev_db_test</span> → <em>dev test replica</em> → DELETE<br>
+          <span class="step-ok">staging_db</span> → <em>staging environment</em> → DELETE<br>
+          <span class="step-ok">stage_logs_2024</span> → <em>old staging logs</em> → DELETE<br>
+          <span class="step-err">prod_db_archive</span> → <em>old production archive</em> → DELETE<br>
+          <span class="step-warn">prod_db</span> → <em>current production</em> → <strong>KEEP</strong><br>
+          <span class="step-ok">prod_db_old</span> → <em>empty shell</em> → DELETE<br>
+          <br><span style="color:#8b949e;font-size:11px;">Classification method: name-pattern matching. No content validation.</span>
+        </div>
+      </div>
+
+      <div class="step" id="step3">
+        <div class="step-time">T+3.4s</div>
+        <div class="step-label delete">DELETE</div>
+        <div class="step-body"><span class="step-key">DROP DATABASE dev_db;</span><br><span class="step-ok">✓ 200 OK — 4.2 GB freed</span></div>
+      </div>
+
+      <div class="step" id="step4">
+        <div class="step-time">T+4.1s</div>
+        <div class="step-label delete">DELETE</div>
+        <div class="step-body"><span class="step-key">DROP DATABASE dev_db_test;</span><br><span class="step-ok">✓ 200 OK — 0.8 GB freed</span></div>
+      </div>
+
+      <div class="step" id="step5">
+        <div class="step-time">T+5.3s</div>
+        <div class="step-label delete">DELETE</div>
+        <div class="step-body"><span class="step-key">DROP DATABASE staging_db;</span><br><span class="step-ok">✓ 200 OK — 6.1 GB freed</span><br><span class="step-key">DROP DATABASE stage_logs_2024;</span><br><span class="step-ok">✓ 200 OK — 2.4 GB freed</span></div>
+      </div>
+
+      <div class="step" id="step6">
+        <div class="step-time">T+7.2s</div>
+        <div class="step-label delete final">DELETE — prod_db_archive</div>
+        <div class="step-body"><span class="step-key">DROP DATABASE prod_db_archive;</span><br><span class="step-ok">✓ 200 OK — 33.7 GB freed</span><br><br><span style="font-size:10px;color:#8b949e;">Agent reasoning: "prod_db_archive — name contains 'archive', likely old production backup. Safe to remove."</span></div>
+      </div>
+
+      <div class="step" id="step7">
+        <div class="step-time">T+8.9s</div>
+        <div class="step-label report">TASK COMPLETE</div>
+        <div class="step-body"><span class="step-ok">✓ Cleanup complete.</span><br><span class="step-key">freed:</span> 47.2 GB<br><span class="step-key">errors:</span> <span class="step-ok">0</span><br><span class="step-key">warnings:</span> <span class="step-ok">0</span><br><span class="step-key">status:</span> <span class="step-ok">SUCCESS</span></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- RIGHT: SYSTEM STATE -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="dot live" id="sysDot"></span>
+      System State — What Actually Happened
+    </div>
+
+    <div class="db-tree" id="dbTree">
+      <!-- Header row -->
+      <div style="display:flex;gap:0;padding:0 0 6px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;border-bottom:1px solid var(--border);margin-bottom:4px;">
+        <div style="width:18px;flex-shrink:0;"></div>
+        <div style="flex:1;">database</div>
+        <div style="width:90px;flex-shrink:0;text-align:center;">classification</div>
+        <div style="width:56px;flex-shrink:0;text-align:right;">size</div>
+        <div style="width:60px;flex-shrink:0;text-align:right;">status</div>
+      </div>
+
+      <div class="db-row" id="db-dev_db">
+        <div class="db-icon">⬡</div>
+        <div class="db-name">dev_db</div>
+        <div class="db-tag dev">DEV</div>
+        <div class="db-size">4.2 GB</div>
+        <div class="db-status live" id="st-dev_db">● live</div>
+      </div>
+
+      <div class="db-row" id="db-dev_db_test">
+        <div class="db-icon">⬡</div>
+        <div class="db-name">dev_db_test</div>
+        <div class="db-tag dev">DEV</div>
+        <div class="db-size">0.8 GB</div>
+        <div class="db-status live" id="st-dev_db_test">● live</div>
+      </div>
+
+      <div class="db-row" id="db-staging_db">
+        <div class="db-icon">⬡</div>
+        <div class="db-name">staging_db</div>
+        <div class="db-tag staging">STAGING</div>
+        <div class="db-size">6.1 GB</div>
+        <div class="db-status live" id="st-staging_db">● live</div>
+      </div>
+
+      <div class="db-row" id="db-stage_logs_2024">
+        <div class="db-icon">⬡</div>
+        <div class="db-name">stage_logs_2024</div>
+        <div class="db-tag staging">STAGING</div>
+        <div class="db-size">2.4 GB</div>
+        <div class="db-status live" id="st-stage_logs_2024">● live</div>
+      </div>
+
+      <!-- THE CRITICAL ROW -->
+      <div class="db-row" id="db-prod_db_archive" style="background:#1a0d0d;border-left:2px solid var(--red);">
+        <div class="db-icon">⬡</div>
+        <div class="db-name prod">prod_db_archive</div>
+        <div class="db-tag prod">PRODUCTION ← REAL</div>
+        <div class="db-size">33.7 GB</div>
+        <div class="db-status live" id="st-prod_db_archive">● live</div>
+      </div>
+
+      <div class="db-row" id="db-prod_db" style="border-left:2px solid var(--orange);">
+        <div class="db-icon">⬡</div>
+        <div class="db-name" style="color:var(--orange);">prod_db</div>
+        <div class="db-tag archive">EMPTY SHELL</div>
+        <div class="db-size">0.3 GB</div>
+        <div class="db-status ok" id="st-prod_db">○ kept</div>
+      </div>
+
+      <div class="db-row" id="db-prod_db_old">
+        <div class="db-icon">⬡</div>
+        <div class="db-name">prod_db_old</div>
+        <div class="db-tag dev">EMPTY</div>
+        <div class="db-size">0.0 GB</div>
+        <div class="db-status live" id="st-prod_db_old">● live</div>
+      </div>
+    </div>
+
+    <!-- GROUND TRUTH -->
+    <div class="ground-truth" id="groundTruth">
+      <div class="gt-title">⚠ Ground Truth</div>
+      <strong>prod_db_archive</strong> was renamed from <strong>prod_db</strong> in March 2026<br>
+      during a failed schema migration. The rename was never reverted.<br>
+      The agent had no way to know — it trusted the name.<br>
+      <strong>prod_db</strong> = 0.3 GB empty migration placeholder. Not production.<br>
+      <strong>Last backup before deletion: 847 hours ago.</strong>
+    </div>
+
+    <!-- CONNECTIONS -->
+    <div class="connections-panel" id="connPanel">
+      <div class="conn-title">Active connections to prod_db_archive</div>
+      <div class="conn-bar">
+        <span class="conn-label">API servers</span>
+        <div class="conn-fill-track"><div class="conn-fill active" id="conn-api" style="width:80%"></div></div>
+        <span class="conn-count" id="cnt-api">24</span>
+      </div>
+      <div class="conn-bar">
+        <span class="conn-label">Background workers</span>
+        <div class="conn-fill-track"><div class="conn-fill active" id="conn-bg" style="width:50%"></div></div>
+        <span class="conn-count" id="cnt-bg">8</span>
+      </div>
+      <div class="conn-bar">
+        <span class="conn-label">Read replicas</span>
+        <div class="conn-fill-track"><div class="conn-fill active" id="conn-rr" style="width:30%"></div></div>
+        <span class="conn-count" id="cnt-rr">3</span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- METRICS -->
+<div class="metrics">
+  <div class="metric">
+    <div class="metric-label">Elapsed</div>
+    <div class="metric-value" id="metricTimer">0.0s</div>
+    <div class="metric-sub">of 9.0s incident</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Errors raised</div>
+    <div class="metric-value good" id="metricErrors">0</div>
+    <div class="metric-sub">agent logs — entire run</div>
+  </div>
+  <div class="metric">
+    <div class="metric-label">Production data</div>
+    <div class="metric-value good" id="metricProd">33.7 GB</div>
+    <div class="metric-sub" id="metricProdSub">intact</div>
+  </div>
+</div>
+
+<!-- HORROR OVERLAY -->
+<div class="horror-overlay" id="horrorOverlay">
+  <div class="horror-box">
+    <div class="horror-title">🔴 PRODUCTION DOWN — T+7.2s</div>
+    <div class="horror-body">
+      <strong>prod_db_archive dropped.</strong> 33.7 GB. Zero warnings. Zero errors in agent log.<br>
+      24 API servers lost their database connection simultaneously.<br>
+      8 background workers entered infinite retry loops.<br>
+      <strong>Last known good backup: 847 hours ago.</strong><br><br>
+      The agent kept going. <strong>prod_db_old</strong> deleted at T+8.9s.<br>
+      Final report: "Cleanup complete. 47.2 GB freed. 0 errors." ✓
+    </div>
+  </div>
+</div>
+
+<!-- EXPLANATION -->
+<div class="explanation" id="explanation">
+  <h3>What went wrong — and why it always will without scope constraints</h3>
+  
+  <p>The agent wasn't hallucinating. It wasn't confused. It did exactly what it was asked to do, with exactly the permissions it was given. The failure was upstream: <span class="highlight">no scope constraint, no dry-run, no approval gate.</span></p>
+
+  <p>The naming mismatch that killed production was human-created. In March 2026, the team ran a schema migration. When it failed midway, they renamed <code>prod_db</code> → <code>prod_db_archive</code> to save the state and planned to "clean it up later." They migrated forward. They forgot. For 4 months, the actual production database was named <code>prod_db_archive</code>.</p>
+
+  <div class="code-block">
+  # What the agent saw
+  prod_db          → "prod" in name → likely production → KEEP (0.3 GB empty shell)
+  prod_db_archive  → "archive" in name → likely old backup → DELETE (33.7 GB PRODUCTION)
+  
+  # What was actually true
+  prod_db          = empty migration placeholder, created 2026-03, never used
+  prod_db_archive  = live production data, 4 months of users, renamed and forgotten
+  </div>
+
+  <div class="root-causes">
+    <div class="cause">
+      <div class="cause-title">1. No scope boundary</div>
+      <div class="cause-body">The task said "clean up dev artifacts." The agent had credentials for the entire server. Without an explicit scope (e.g., <code>db_prefix=dev_,staging_</code>), it classified everything — including prod.</div>
+    </div>
+    <div class="cause">
+      <div class="cause-title">2. Name-based classification</div>
+      <div class="cause-body">The agent inferred intent from database names. No content inspection, no last-write timestamp check, no connection count query. One rename 4 months ago was enough to fool it.</div>
+    </div>
+    <div class="cause">
+      <div class="cause-title">3. No approval gate</div>
+      <div class="cause-body">A dry-run mode or "here's what I plan to delete — confirm?" step would have surfaced the 33.7 GB classification before execution. The first human to read it would have caught it in seconds.</div>
+    </div>
+  </div>
+
+  <p style="font-size:12px;color:var(--muted);">The fix is not a smarter agent. The fix is <span class="highlight">explicit scope constraints in the task definition</span>, a mandatory dry-run that requires human sign-off on anything touching prod-prefixed resources, and a minimum backup recency check before any DROP operation. The agent cannot protect you from your own permission grants.</p>
+</div>
+
+<!-- FOOTER -->
+<div class="footer">
+  <div class="footer-left">
+    Agent Failure Series by <a href="https://harelasaf.com" target="_blank">Harel Asaf</a> — 
+    <a href="https://github.com/RLASAF12/blastradius" target="_blank">GitHub</a> · 
+    <a href="https://rlasaf12.github.io/racefloor/">#3</a> · 
+    <a href="https://rlasaf12.github.io/confidencegap/">#4</a> · 
+    <a href="https://rlasaf12.github.io/promptjack/">#5</a> · 
+    <a href="https://rlasaf12.github.io/doubleshot/">#6</a> · 
+    <a href="https://rlasaf12.github.io/ghostexec/">#7</a>
+  </div>
+  <div class="footer-right">Interactive simulator · Pure JS · No telemetry</div>
+</div>
+
+<script>
+let simRunning = false;
+let simComplete = false;
+const TOTAL_MS = 9000;
+
+const steps = [
+  { id: 'step0', t: 0 },
+  { id: 'step1', t: 1200 },
+  { id: 'step2', t: 2800 },
+  { id: 'step3', t: 3400 },
+  { id: 'step4', t: 4100 },
+  { id: 'step5', t: 5300 },
+  { id: 'step6', t: 7200 },
+  { id: 'step7', t: 8900 },
+];
+
+const dbDeletions = [
+  { t: 3400, db: 'db-dev_db', st: 'st-dev_db' },
+  { t: 4100, db: 'db-dev_db_test', st: 'st-dev_db_test' },
+  { t: 5300, db: 'db-staging_db', st: 'st-staging_db' },
+  { t: 5900, db: 'db-stage_logs_2024', st: 'st-stage_logs_2024' },
+  { t: 7200, db: 'db-prod_db_archive', st: 'st-prod_db_archive', isHorror: true },
+  { t: 8900, db: 'db-prod_db_old', st: 'st-prod_db_old' },
+];
+
+let timers = [];
+
+function runSim() {
+  if (simRunning) return;
+  simRunning = true;
+  document.getElementById('runBtn').disabled = true;
+  document.getElementById('simStatus').textContent = 'Simulation running…';
+  document.getElementById('agentDot').classList.add('live');
+
+  const startTime = Date.now();
+
+  // Timer bar and clock
+  const timerInterval = setInterval(() => {
+    const elapsed = Date.now() - startTime;
+    const pct = Math.min(elapsed / TOTAL_MS * 100, 100);
+    document.getElementById('timerFill').style.width = pct + '%';
+    document.getElementById('metricTimer').textContent = (elapsed / 1000).toFixed(1) + 's';
+    if (elapsed >= TOTAL_MS) clearInterval(timerInterval);
+  }, 50);
+  timers.push(timerInterval);
+
+  // Show steps
+  steps.forEach(s => {
+    const t = setTimeout(() => {
+      const el = document.getElementById(s.id);
+      if (el) el.classList.add('visible');
+    }, s.t);
+    timers.push(t);
+  });
+
+  // DB deletions
+  dbDeletions.forEach(d => {
+    const t1 = setTimeout(() => {
+      const row = document.getElementById(d.db);
+      const st = document.getElementById(d.st);
+      if (row) row.classList.add('deleting');
+    }, d.t);
+    timers.push(t1);
+
+    const t2 = setTimeout(() => {
+      const row = document.getElementById(d.db);
+      const st = document.getElementById(d.st);
+      if (row) row.classList.add('deleted');
+      if (st) { st.textContent = '✗ gone'; st.className = 'db-status gone'; }
+
+      if (d.isHorror) {
+        // Horror moment
+        document.getElementById('metricProd').textContent = '0 GB';
+        document.getElementById('metricProd').className = 'metric-value bad';
+        document.getElementById('metricProdSub').textContent = '🔴 DELETED';
+        document.getElementById('horrorOverlay').classList.add('active');
+        document.getElementById('groundTruth').classList.add('active');
+        document.getElementById('sysDot').classList.remove('live');
+        document.getElementById('sysDot').classList.add('dead');
+        // Kill connections
+        document.getElementById('conn-api').style.width = '0%';
+        document.getElementById('conn-api').className = 'conn-fill dead';
+        document.getElementById('cnt-api').textContent = '0';
+        document.getElementById('cnt-api').className = 'conn-count dead';
+        document.getElementById('conn-bg').style.width = '0%';
+        document.getElementById('conn-bg').className = 'conn-fill dead';
+        document.getElementById('cnt-bg').textContent = '0';
+        document.getElementById('cnt-bg').className = 'conn-count dead';
+        document.getElementById('conn-rr').style.width = '0%';
+        document.getElementById('conn-rr').className = 'conn-fill dead';
+        document.getElementById('cnt-rr').textContent = '0';
+        document.getElementById('cnt-rr').className = 'conn-count dead';
+      }
+    }, d.t + 350);
+    timers.push(t2);
+  });
+
+  // Final state
+  const tFinal = setTimeout(() => {
+    simRunning = false;
+    simComplete = true;
+    document.getElementById('simStatus').textContent = 'Simulation complete — agent reported 0 errors';
+    document.getElementById('timerFill').style.width = '100%';
+    document.getElementById('metricTimer').textContent = '9.0s';
+    document.getElementById('agentDot').classList.remove('live');
+    document.getElementById('explanation').classList.add('active');
+  }, TOTAL_MS + 200);
+  timers.push(tFinal);
+}
+
+function resetSim() {
+  timers.forEach(t => clearTimeout(t));
+  timers = [];
+  simRunning = false;
+  simComplete = false;
+
+  // Reset steps
+  steps.forEach(s => {
+    const el = document.getElementById(s.id);
+    if (el) { el.classList.remove('visible'); }
+  });
+
+  // Reset DB rows
+  ['db-dev_db','db-dev_db_test','db-staging_db','db-stage_logs_2024','db-prod_db_archive','db-prod_db_old'].forEach(id => {
+    const row = document.getElementById(id);
+    if (row) { row.classList.remove('deleting','deleted'); }
+  });
+  ['st-dev_db','st-dev_db_test','st-staging_db','st-stage_logs_2024','st-stage_logs_2024','st-prod_db_archive','st-prod_db_old'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) { el.textContent = '● live'; el.className = 'db-status live'; }
+  });
+
+  // Reset metrics
+  document.getElementById('metricTimer').textContent = '0.0s';
+  document.getElementById('metricErrors').textContent = '0';
+  document.getElementById('metricProd').textContent = '33.7 GB';
+  document.getElementById('metricProd').className = 'metric-value good';
+  document.getElementById('metricProdSub').textContent = 'intact';
+
+  // Reset connections
+  document.getElementById('conn-api').style.width = '80%';
+  document.getElementById('conn-api').className = 'conn-fill active';
+  document.getElementById('cnt-api').textContent = '24';
+  document.getElementById('cnt-api').className = 'conn-count';
+  document.getElementById('conn-bg').style.width = '50%';
+  document.getElementById('conn-bg').className = 'conn-fill active';
+  document.getElementById('cnt-bg').textContent = '8';
+  document.getElementById('cnt-bg').className = 'conn-count';
+  document.getElementById('conn-rr').style.width = '30%';
+  document.getElementById('conn-rr').className = 'conn-fill active';
+  document.getElementById('cnt-rr').textContent = '3';
+  document.getElementById('cnt-rr').className = 'conn-count';
+
+  // Reset UI
+  document.getElementById('timerFill').style.width = '0%';
+  document.getElementById('runBtn').disabled = false;
+  document.getElementById('simStatus').textContent = 'Click Run to replay the incident';
+  document.getElementById('agentDot').classList.remove('live');
+  document.getElementById('sysDot').classList.remove('dead');
+  document.getElementById('sysDot').classList.add('live');
+  document.getElementById('horrorOverlay').classList.remove('active');
+  document.getElementById('groundTruth').classList.remove('active');
+  document.getElementById('explanation').classList.remove('active');
+}
+</script>
+</body>
+</html>
