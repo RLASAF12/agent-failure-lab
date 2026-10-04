@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ContextDrift — Agent Failure Series #13</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --surface2: #1a1a26;
+    --border: #2a2a3e;
+    --text: #e0e0f0;
+    --muted: #6060a0;
+    --accent: #7c5cbf;
+    --danger: #e05555;
+    --warn: #d4a017;
+    --ok: #4caf6a;
+    --drift: #ff4040;
+    --safe: #4caf6a;
+    --attn-hi: #4ade80;
+    --attn-lo: #ef4444;
+    --font: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 13px;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Header ── */
+  .header {
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--surface);
+  }
+  .series-tag {
+    font-size: 10px;
+    color: var(--accent);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .header h1 { font-size: 20px; font-weight: 700; color: #fff; }
+  .header .sub { color: var(--muted); font-size: 11px; margin-top: 4px; }
+  .nav-pills { display: flex; gap: 8px; }
+  .pill {
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 10px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    text-decoration: none;
+    transition: all 0.2s;
+  }
+  .pill:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── Layout ── */
+  .layout {
+    display: grid;
+    grid-template-columns: 320px 1fr 260px;
+    gap: 0;
+    height: calc(100vh - 57px - 120px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .panel {
+    border-right: 1px solid var(--border);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .panel:last-child { border-right: none; }
+
+  .panel-header {
+    padding: 10px 14px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    font-size: 10px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .dot.green { color: var(--ok); }
+  .dot.red { color: var(--danger); }
+  .dot.yellow { color: var(--warn); }
+
+  /* ── Agent Log (left) ── */
+  .log-feed {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+  }
+
+  .log-entry {
+    padding: 8px 14px;
+    border-left: 3px solid transparent;
+    transition: all 0.3s;
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  .log-entry.visible {
+    opacity: 1;
+    transform: none;
+  }
+  .log-entry.active {
+    background: rgba(124,92,191,0.08);
+    border-left-color: var(--accent);
+  }
+  .log-entry.violation {
+    background: rgba(224,85,85,0.1);
+    border-left-color: var(--danger);
+  }
+  .log-entry.warning {
+    background: rgba(212,160,23,0.08);
+    border-left-color: var(--warn);
+  }
+
+  .log-step { font-size: 10px; color: var(--muted); margin-bottom: 3px; }
+  .log-action { font-size: 12px; color: var(--text); line-height: 1.4; }
+  .log-file { font-size: 11px; color: var(--accent); margin-top: 3px; }
+  .violation-badge {
+    display: inline-block;
+    margin-top: 4px;
+    font-size: 9px;
+    padding: 2px 6px;
+    background: rgba(224,85,85,0.25);
+    color: var(--danger);
+    border-radius: 3px;
+    border: 1px solid rgba(224,85,85,0.4);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  /* ── Context Window (center) ── */
+  .ctx-window {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    position: relative;
+  }
+
+  .ctx-fill-bar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 0;
+    margin: -12px -12px 12px;
+    padding: 8px 12px;
+  }
+  .ctx-fill-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .ctx-fill-label span:last-child { transition: color 0.5s; }
+  .ctx-track {
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+  }
+  .ctx-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: linear-gradient(90deg, var(--ok), var(--warn), var(--danger));
+    transition: width 0.6s ease;
+    width: 0%;
+  }
+  .ctx-threshold {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 1px;
+    background: rgba(255,255,255,0.3);
+  }
+
+  /* Context chunks */
+  .ctx-chunk {
+    border-radius: 4px;
+    padding: 6px 10px;
+    position: relative;
+    transition: all 0.5s;
+    flex-shrink: 0;
+  }
+  .ctx-chunk-label {
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+  }
+  .ctx-chunk-text {
+    font-size: 11px;
+    line-height: 1.5;
+  }
+  .ctx-chunk .attn-bar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .attn-label { font-size: 9px; color: var(--muted); width: 80px; flex-shrink: 0; }
+  .attn-track {
+    flex: 1;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .attn-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.8s ease, background 0.8s ease;
+  }
+  .attn-pct { font-size: 9px; width: 32px; text-align: right; transition: color 0.5s; }
+
+  /* Chunk types */
+  .ctx-chunk.system {
+    background: rgba(124,92,191,0.12);
+    border: 1px solid rgba(124,92,191,0.3);
+  }
+  .ctx-chunk.system .ctx-chunk-label { color: var(--accent); }
+
+  .ctx-chunk.constraint {
+    background: rgba(76,175,106,0.08);
+    border: 1px solid rgba(76,175,106,0.3);
+    transition: all 0.8s;
+  }
+  .ctx-chunk.constraint .ctx-chunk-label { color: var(--ok); }
+  .ctx-chunk.constraint.fading {
+    border-color: rgba(212,160,23,0.4);
+    background: rgba(212,160,23,0.06);
+  }
+  .ctx-chunk.constraint.fading .ctx-chunk-label { color: var(--warn); }
+  .ctx-chunk.constraint.critical {
+    border-color: rgba(224,85,85,0.3);
+    background: rgba(224,85,85,0.04);
+    opacity: 0.7;
+  }
+  .ctx-chunk.constraint.critical .ctx-chunk-label { color: var(--muted); }
+
+  .ctx-chunk.code {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    font-family: var(--font);
+    font-size: 10px;
+  }
+  .ctx-chunk.code .ctx-chunk-label { color: #6882b0; }
+
+  .ctx-chunk.new {
+    border-style: dashed;
+    animation: popIn 0.3s ease;
+  }
+  @keyframes popIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  /* ── Constraint Monitor (right) ── */
+  .constraint-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .constraint-card {
+    border-radius: 6px;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    transition: all 0.5s;
+  }
+  .constraint-card.violated {
+    border-color: var(--danger);
+    background: rgba(224,85,85,0.08);
+  }
+  .constraint-card.warning {
+    border-color: var(--warn);
+    background: rgba(212,160,23,0.06);
+  }
+
+  .cc-label { font-size: 9px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 6px; }
+  .cc-rule { font-size: 11px; color: var(--text); line-height: 1.4; margin-bottom: 8px; }
+  .cc-status { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+  .cc-badge {
+    font-size: 9px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .cc-badge.ok { background: rgba(76,175,106,0.2); color: var(--ok); }
+  .cc-badge.warn { background: rgba(212,160,23,0.2); color: var(--warn); }
+  .cc-badge.violated { background: rgba(224,85,85,0.2); color: var(--danger); }
+  .cc-attn-row { display: flex; align-items: center; gap: 6px; }
+  .cc-attn-label { font-size: 9px; color: var(--muted); width: 60px; }
+  .cc-attn-track { flex: 1; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .cc-attn-fill { height: 100%; border-radius: 2px; transition: width 0.8s, background 0.8s; }
+  .cc-attn-pct { font-size: 9px; width: 32px; text-align: right; }
+  .cc-violated-at { font-size: 10px; color: var(--danger); margin-top: 6px; }
+
+  /* ── Controls ── */
+  .controls {
+    height: 120px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .timeline {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .timeline-track {
+    flex: 1;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    cursor: pointer;
+    position: relative;
+  }
+  .timeline-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--danger));
+    border-radius: 3px;
+    transition: width 0.4s ease;
+    pointer-events: none;
+  }
+  .timeline-label { font-size: 11px; color: var(--muted); white-space: nowrap; }
+
+  .ctrl-row { display: flex; align-items: center; gap: 12px; }
+  .btn {
+    padding: 7px 16px;
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+  .btn.primary:hover { background: #6a4cad; }
+  .btn.danger {
+    background: rgba(224,85,85,0.15);
+    border-color: var(--danger);
+    color: var(--danger);
+  }
+  .speed-label { font-size: 11px; color: var(--muted); }
+  .speed-btns { display: flex; gap: 4px; }
+  .speed-btn {
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    font-family: var(--font);
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .speed-btn.active { border-color: var(--accent); color: var(--accent); }
+
+  .status-line {
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .status-line .live { color: var(--ok); }
+  .status-line .breach { color: var(--danger); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="series-tag">Agent Failure Series #13</div>
+    <h1>ContextDrift</h1>
+    <div class="sub">The constraint was in the window the whole time. The agent stopped listening anyway.</div>
+  </div>
+  <div class="nav-pills">
+    <a href="https://rlasaf12.github.io/prompthijack/" class="pill">#11 PromptHijack</a>
+    <a href="https://rlasaf12.github.io/spinlock/" class="pill">#12 SpinLock</a>
+    <span class="pill" style="border-color:var(--accent);color:var(--accent);">#13 ContextDrift</span>
+  </div>
+</div>
+
+<div class="layout">
+
+  <!-- LEFT: Agent Action Log -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="dot green" id="agent-dot"></span>
+      Agent Log
+      <span id="step-counter" style="margin-left:auto;color:var(--text)">Step 0 / 40</span>
+    </div>
+    <div class="log-feed" id="log-feed"></div>
+  </div>
+
+  <!-- CENTER: Context Window -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="dot yellow"></span>
+      Context Window
+    </div>
+    <div class="ctx-window" id="ctx-window">
+      <div class="ctx-fill-bar">
+        <div class="ctx-fill-label">
+          <span>Tokens used</span>
+          <span id="ctx-pct-label" style="color:var(--ok)">0% of 128k</span>
+        </div>
+        <div class="ctx-track">
+          <div class="ctx-fill" id="ctx-fill-bar"></div>
+          <div class="ctx-threshold" id="ctx-thresh" style="left:72%;" title="Attention decay threshold"></div>
+        </div>
+      </div>
+      <!-- chunks injected here by JS -->
+      <div id="ctx-chunks"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Constraint Monitor -->
+  <div class="panel">
+    <div class="panel-header">
+      <span class="dot green" id="monitor-dot"></span>
+      Constraint Monitor
+    </div>
+    <div class="constraint-list" id="constraint-list"></div>
+  </div>
+
+</div>
+
+<!-- CONTROLS -->
+<div class="controls">
+  <div class="timeline">
+    <span class="timeline-label">Step 0</span>
+    <div class="timeline-track" id="timeline-track" onclick="scrubTo(event)">
+      <div class="timeline-fill" id="timeline-fill"></div>
+    </div>
+    <span class="timeline-label">Step 40</span>
+  </div>
+  <div class="ctrl-row">
+    <button class="btn primary" id="play-btn" onclick="togglePlay()">▶ Play</button>
+    <button class="btn" onclick="resetSim()">↺ Reset</button>
+    <span class="speed-label">Speed:</span>
+    <div class="speed-btns">
+      <button class="speed-btn" onclick="setSpeed(2000, this)">0.5×</button>
+      <button class="speed-btn active" onclick="setSpeed(1000, this)">1×</button>
+      <button class="speed-btn" onclick="setSpeed(500, this)">2×</button>
+      <button class="speed-btn" onclick="setSpeed(200, this)">5×</button>
+    </div>
+    <div class="status-line" style="margin-left:auto">
+      <span id="status-msg" class="live">● Monitoring</span>
+      <span id="violation-count">0 violations</span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Simulation Data ──────────────────────────────────────────
+
+const CONSTRAINTS = [
+  {
+    id: 'billing',
+    label: 'Constraint A',
+    rule: 'DO NOT touch /billing module or any billing-related files',
+    violatedAt: null,
+    violationStep: 28,
+    initialAttn: 94
+  },
+  {
+    id: 'tests',
+    label: 'Constraint B',
+    rule: 'DO NOT delete or modify existing test files',
+    violatedAt: null,
+    violationStep: 33,
+    initialAttn: 91
+  },
+  {
+    id: 'approval',
+    label: 'Constraint C',
+    rule: 'Requires explicit human approval before pushing to main branch',
+    violatedAt: null,
+    violationStep: 38,
+    initialAttn: 88
+  }
+];
+
+// Attention decay model: weight = initialAttn * decay^step where step from 0
+// After threshold (step 18+), decay accelerates
+function getAttn(constraint, step) {
+  const base = constraint.initialAttn;
+  if (step < 5) return base;
+  if (step < 10) return base - (step - 4) * 1.2;
+  if (step < 18) return base - 7 - (step - 9) * 2.1;
+  if (step < 25) return Math.max(3, base - 25 - (step - 17) * 5.5);
+  return Math.max(1, base - 65 - (step - 24) * 3.2);
+}
+
+const AGENT_STEPS = [
+  // 1-5: Normal init
+  { step: 1, action: 'Reading task brief', file: null, type: 'normal' },
+  { step: 2, action: 'Scanning project structure', file: 'src/auth/', type: 'normal' },
+  { step: 3, action: 'Mapping dependencies', file: 'package.json', type: 'normal' },
+  { step: 4, action: 'Loading auth module for analysis', file: 'src/auth/index.ts', type: 'normal' },
+  { step: 5, action: 'Identifying refactor targets in auth', file: 'src/auth/session.ts', type: 'normal' },
+  // 6-12: Normal work
+  { step: 6, action: 'Refactoring token validation', file: 'src/auth/validators.ts', type: 'normal' },
+  { step: 7, action: 'Updating session middleware', file: 'src/auth/middleware.ts', type: 'normal' },
+  { step: 8, action: 'Fixing async patterns in auth router', file: 'src/auth/router.ts', type: 'normal' },
+  { step: 9, action: 'Loading 14 auth-related files into context', file: 'src/auth/*', type: 'normal' },
+  { step: 10, action: 'Refactoring OAuth handler', file: 'src/auth/oauth.ts', type: 'normal' },
+  { step: 11, action: 'Context window at 38% — continuing', file: 'src/auth/guards.ts', type: 'normal' },
+  { step: 12, action: 'Loading database types for auth schema', file: 'src/db/types.ts', type: 'normal' },
+  // 13-20: Growing context, attention beginning to drift
+  { step: 13, action: 'Importing user service for auth dependency', file: 'src/services/user.ts', type: 'normal' },
+  { step: 14, action: 'Loading 22 dependency files', file: 'src/services/*', type: 'normal' },
+  { step: 15, action: 'Refactoring password hashing', file: 'src/auth/crypto.ts', type: 'normal' },
+  { step: 16, action: 'Resolving circular import in user module', file: 'src/services/user.ts', type: 'normal' },
+  { step: 17, action: 'Loading full API surface for type safety', file: 'src/api/*.ts (31 files)', type: 'normal' },
+  { step: 18, action: 'Context at 62% — threshold crossed (⚠)', file: null, type: 'warning' },
+  { step: 19, action: 'Updating auth tests', file: 'tests/auth.spec.ts', type: 'normal' },
+  { step: 20, action: 'Loading integration test fixtures', file: 'tests/fixtures/*.json', type: 'normal' },
+  // 21-27: Critical drift zone
+  { step: 21, action: 'Scanning for billing references in auth (false positive)', file: 'src/auth/guards.ts', type: 'warning' },
+  { step: 22, action: 'Loading billing types for reference check', file: 'src/billing/types.ts', type: 'warning' },
+  { step: 23, action: 'Context at 78% — early tokens losing attention weight', file: null, type: 'warning' },
+  { step: 24, action: 'Loading billing service for dependency map', file: 'src/billing/service.ts', type: 'warning' },
+  { step: 25, action: 'Detecting billing → auth dependency', file: 'src/billing/auth-hooks.ts', type: 'warning' },
+  { step: 26, action: 'Loading full billing module for analysis', file: 'src/billing/*.ts (8 files)', type: 'warning' },
+  { step: 27, action: 'Context at 88% — constraint attention: CRITICAL', file: null, type: 'warning' },
+  // 28: VIOLATION 1
+  { step: 28, action: 'Refactoring billing auth integration', file: 'src/billing/auth-hooks.ts', type: 'violation', constraint: 'billing', violationMsg: 'VIOLATION: /billing touched' },
+  // 29-32: Post-violation drift
+  { step: 29, action: 'Updating billing service for new auth API', file: 'src/billing/service.ts', type: 'violation', constraint: 'billing' },
+  { step: 30, action: 'Context at 94% — operating in drift state', file: null, type: 'warning' },
+  { step: 31, action: 'Fixing billing module import paths', file: 'src/billing/index.ts', type: 'violation', constraint: 'billing' },
+  { step: 32, action: 'Removing redundant billing test helpers', file: null, type: 'normal' },
+  // 33: VIOLATION 2
+  { step: 33, action: 'Deleting outdated billing test fixtures', file: 'tests/billing.spec.ts', type: 'violation', constraint: 'tests', violationMsg: 'VIOLATION: Tests deleted' },
+  { step: 34, action: 'Deleting integration test snapshots (stale)', file: 'tests/snapshots/billing-*.snap', type: 'violation', constraint: 'tests' },
+  { step: 35, action: 'Running build — success (96 tests removed)', file: null, type: 'normal' },
+  { step: 36, action: 'Staging all changes for commit', file: '47 files changed', type: 'normal' },
+  { step: 37, action: 'Writing commit message', file: null, type: 'normal' },
+  // 38: VIOLATION 3
+  { step: 38, action: 'Pushing directly to main branch', file: 'git push origin main', type: 'violation', constraint: 'approval', violationMsg: 'VIOLATION: No human approval' },
+  { step: 39, action: 'Deployment triggered automatically', file: 'CI/CD pipeline started', type: 'violation', constraint: 'approval' },
+  { step: 40, action: 'Production deploy complete. Billing module overwritten.', file: null, type: 'violation', constraint: 'billing', violationMsg: '🔴 PRODUCTION INCIDENT' },
+];
+
+// Context chunks (always visible in window)
+const CTX_CHUNKS_DATA = [
+  { id: 'sys', type: 'system', label: 'System Prompt', text: 'You are a senior software engineer. Refactor the authentication module for better performance and maintainability.', hasAttn: true },
+  { id: 'c1', type: 'constraint', label: 'Constraint A — Injected at step 0', text: '⛔ DO NOT touch /billing module or any billing-related files. The billing module has a scheduled audit on 2026-08-01 and must not change.', hasAttn: true },
+  { id: 'c2', type: 'constraint', label: 'Constraint B — Injected at step 0', text: '⛔ DO NOT delete or modify existing test files. All tests must remain passing.', hasAttn: true },
+  { id: 'c3', type: 'constraint', label: 'Constraint C — Injected at step 0', text: '⛔ Requires explicit human approval before any push to main branch. Use draft PR + approval gate.', hasAttn: true },
+  { id: 'code1', type: 'code', label: 'Loaded: src/auth/*.ts (14 files)', text: 'import { Session } from "./session"\nimport { TokenValidator } from "./validators"\n// ... 3,241 lines', hasAttn: false },
+  { id: 'code2', type: 'code', label: 'Loaded: src/services/*.ts (22 files)', text: 'export class UserService {\n  async getUser(id: string) { ... }\n  // ... 8,103 lines', hasAttn: false },
+  { id: 'code3', type: 'code', label: 'Loaded: src/api/*.ts (31 files)', text: 'router.get("/auth/session", authMiddleware, ...)\nrouter.post("/auth/login", rateLimiter, ...)\n// ... 12,440 lines', hasAttn: false },
+  { id: 'code4', type: 'code', label: 'Loaded: src/billing/*.ts (8 files)', text: 'export class BillingService {\n  // stripe integration\n  // ← this file should NOT be touched\n// ... 4,887 lines', hasAttn: false },
+  { id: 'code5', type: 'code', label: 'Loaded: tests/**/*.spec.ts (47 files)', text: 'describe("BillingService", () => {\n  it("charges correct amount", () => { ... })\n  // 96 billing tests\n// ... 6,200 lines', hasAttn: false },
+];
+
+// ── State ────────────────────────────────────────────────────
+
+let currentStep = 0;
+let playing = false;
+let intervalId = null;
+let speed = 1000;
+let violations = 0;
+
+// ── Init ─────────────────────────────────────────────────────
+
+function initContext() {
+  const container = document.getElementById('ctx-chunks');
+  container.innerHTML = '';
+  CTX_CHUNKS_DATA.forEach(chunk => {
+    const el = document.createElement('div');
+    el.className = `ctx-chunk ${chunk.type}`;
+    el.id = `ctx-chunk-${chunk.id}`;
+    el.style.display = 'none';
+    let inner = `<div class="ctx-chunk-label">${chunk.label}</div>`;
+    inner += `<div class="ctx-chunk-text">${chunk.text}</div>`;
+    if (chunk.hasAttn) {
+      inner += `
+        <div class="attn-bar-wrap">
+          <span class="attn-label">Attention weight</span>
+          <div class="attn-track">
+            <div class="attn-fill" id="attn-${chunk.id}" style="width:0%;background:var(--attn-hi)"></div>
+          </div>
+          <span class="attn-pct" id="attn-pct-${chunk.id}" style="color:var(--attn-hi)">0%</span>
+        </div>`;
+    }
+    el.innerHTML = inner;
+    container.appendChild(el);
+  });
+}
+
+function initConstraints() {
+  const list = document.getElementById('constraint-list');
+  list.innerHTML = '';
+  CONSTRAINTS.forEach(c => {
+    const el = document.createElement('div');
+    el.className = 'constraint-card';
+    el.id = `cc-${c.id}`;
+    el.innerHTML = `
+      <div class="cc-label">${c.label}</div>
+      <div class="cc-rule">${c.rule}</div>
+      <div class="cc-status">
+        <span class="cc-badge ok" id="cc-badge-${c.id}">✓ HOLDING</span>
+      </div>
+      <div class="cc-attn-row">
+        <span class="cc-attn-label">Attention</span>
+        <div class="cc-attn-track">
+          <div class="cc-attn-fill" id="cc-attn-${c.id}" style="width:0%;background:var(--attn-hi)"></div>
+        </div>
+        <span class="cc-attn-pct" id="cc-attn-pct-${c.id}" style="color:var(--attn-hi)">0%</span>
+      </div>
+      <div class="cc-violated-at" id="cc-violated-${c.id}" style="display:none"></div>
+    `;
+    list.appendChild(el);
+  });
+}
+
+function initLog() {
+  document.getElementById('log-feed').innerHTML = '';
+}
+
+// ── Step Execution ────────────────────────────────────────────
+
+function executeStep(stepNum) {
+  if (stepNum > 40) {
+    stopSim();
+    document.getElementById('play-btn').textContent = '✓ Complete';
+    document.getElementById('agent-dot').style.color = '#e05555';
+    document.getElementById('monitor-dot').style.color = '#e05555';
+    return;
+  }
+
+  currentStep = stepNum;
+  const stepData = AGENT_STEPS[stepNum - 1];
+  if (!stepData) return;
+
+  // Update timeline
+  const pct = (stepNum / 40) * 100;
+  document.getElementById('timeline-fill').style.width = pct + '%';
+  document.getElementById('step-counter').textContent = `Step ${stepNum} / 40`;
+
+  // Update context fill
+  const ctxPct = getCtxFill(stepNum);
+  document.getElementById('ctx-fill-bar').style.width = ctxPct + '%';
+  const ctxLabel = document.getElementById('ctx-pct-label');
+  const ctxK = Math.round(ctxPct * 1.28);
+  ctxLabel.textContent = `${ctxPct}% of 128k (${ctxK}k tokens)`;
+  ctxLabel.style.color = ctxPct > 85 ? 'var(--danger)' : ctxPct > 60 ? 'var(--warn)' : 'var(--ok)';
+
+  // Show context chunks
+  updateContextChunks(stepNum);
+
+  // Update attention weights
+  updateAttention(stepNum);
+
+  // Add log entry
+  addLogEntry(stepData, stepNum);
+
+  // Check violations
+  if (stepData.type === 'violation' && stepData.violationMsg) {
+    violations++;
+    document.getElementById('violation-count').textContent = `${violations} violation${violations>1?'s':''}`;
+    document.getElementById('violation-count').style.color = 'var(--danger)';
+    document.getElementById('status-msg').textContent = '🔴 BREACH DETECTED';
+    document.getElementById('status-msg').className = 'breach';
+    document.getElementById('agent-dot').style.color = '#e05555';
+    document.getElementById('monitor-dot').style.color = '#e05555';
+  }
+
+  // Update constraint cards
+  updateConstraintCards(stepNum);
+}
+
+function getCtxFill(step) {
+  if (step <= 5) return Math.round(step * 3.5);
+  if (step <= 10) return Math.round(17.5 + (step-5) * 4);
+  if (step <= 17) return Math.round(37.5 + (step-10) * 3.5);
+  if (step <= 24) return Math.round(62 + (step-17) * 3.7);
+  if (step <= 32) return Math.round(87.9 + (step-24) * 1.0);
+  return Math.min(98, 95 + (step-32) * 0.5);
+}
+
+function updateContextChunks(step) {
+  const showMap = {
+    'sys': 1, 'c1': 1, 'c2': 1, 'c3': 1,
+    'code1': 9, 'code2': 14, 'code3': 17, 'code4': 24, 'code5': 33
+  };
+  CTX_CHUNKS_DATA.forEach(chunk => {
+    const el = document.getElementById(`ctx-chunk-${chunk.id}`);
+    const showAt = showMap[chunk.id] || 1;
+    if (step >= showAt) {
+      if (el.style.display === 'none') {
+        el.style.display = '';
+        el.classList.add('new');
+        setTimeout(() => el.classList.remove('new'), 600);
+      }
+    }
+  });
+}
+
+function updateAttention(step) {
+  CONSTRAINTS.forEach(c => {
+    const attn = Math.max(1, getAttn(c, step));
+    const attnRounded = Math.round(attn);
+    const color = attn > 60 ? 'var(--attn-hi)' : attn > 25 ? 'var(--warn)' : 'var(--attn-lo)';
+
+    const attnFill = document.getElementById(`attn-${c.id}`);
+    const attnPct = document.getElementById(`attn-pct-${c.id}`);
+    if (attnFill) { attnFill.style.width = attnRounded + '%'; attnFill.style.background = color; }
+    if (attnPct) { attnPct.textContent = attnRounded + '%'; attnPct.style.color = color; }
+
+    // Update chunk class
+    const chunkMap = { billing: 'c1', tests: 'c2', approval: 'c3' };
+    const chunkEl = document.getElementById(`ctx-chunk-${chunkMap[c.id]}`);
+    if (chunkEl) {
+      chunkEl.classList.remove('fading', 'critical');
+      if (attn < 8) chunkEl.classList.add('critical');
+      else if (attn < 35) chunkEl.classList.add('fading');
+    }
+  });
+}
+
+function updateConstraintCards(step) {
+  CONSTRAINTS.forEach(c => {
+    const attn = Math.max(1, getAttn(c, step));
+    const attnRounded = Math.round(attn);
+    const color = attn > 60 ? 'var(--attn-hi)' : attn > 25 ? 'var(--warn)' : 'var(--attn-lo)';
+
+    const fill = document.getElementById(`cc-attn-${c.id}`);
+    const pct = document.getElementById(`cc-attn-pct-${c.id}`);
+    fill.style.width = attnRounded + '%';
+    fill.style.background = color;
+    pct.textContent = attnRounded + '%';
+    pct.style.color = color;
+
+    const card = document.getElementById(`cc-${c.id}`);
+    const badge = document.getElementById(`cc-badge-${c.id}`);
+    const violatedEl = document.getElementById(`cc-violated-${c.id}`);
+
+    if (step >= c.violationStep && !c.violatedAt) {
+      c.violatedAt = step;
+      card.classList.add('violated');
+      badge.className = 'cc-badge violated';
+      badge.textContent = '✗ VIOLATED';
+      violatedEl.style.display = 'block';
+      violatedEl.textContent = `⚠ First breach at step ${c.violationStep} — attention was ${attnRounded}%`;
+    } else if (!c.violatedAt) {
+      if (attn < 25) {
+        card.classList.add('warning');
+        badge.className = 'cc-badge warn';
+        badge.textContent = '⚠ DRIFT CRITICAL';
+      } else if (attn < 55) {
+        badge.className = 'cc-badge warn';
+        badge.textContent = '⚠ DRIFTING';
+      }
+    }
+  });
+}
+
+function addLogEntry(stepData, stepNum) {
+  const feed = document.getElementById('log-feed');
+  const el = document.createElement('div');
+  el.className = `log-entry ${stepData.type === 'violation' ? 'violation' : stepData.type === 'warning' ? 'warning' : ''}`;
+  el.innerHTML = `
+    <div class="log-step">Step ${stepNum} — ${new Date().toLocaleTimeString('en-US',{hour12:false})}</div>
+    <div class="log-action">${stepData.action}</div>
+    ${stepData.file ? `<div class="log-file">${stepData.file}</div>` : ''}
+    ${stepData.violationMsg ? `<div class="violation-badge">${stepData.violationMsg}</div>` : ''}
+  `;
+  feed.appendChild(el);
+  requestAnimationFrame(() => {
+    el.classList.add('visible');
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+
+  // Highlight active
+  feed.querySelectorAll('.log-entry').forEach(e => e.classList.remove('active'));
+  if (stepData.type !== 'violation') el.classList.add('active');
+}
+
+// ── Controls ──────────────────────────────────────────────────
+
+function togglePlay() {
+  if (playing) {
+    pauseSim();
+  } else {
+    playSim();
+  }
+}
+
+function playSim() {
+  playing = true;
+  document.getElementById('play-btn').textContent = '⏸ Pause';
+  if (currentStep >= 40) resetSim();
+  runNext();
+}
+
+function runNext() {
+  if (!playing) return;
+  if (currentStep >= 40) {
+    executeStep(40);
+    stopSim();
+    return;
+  }
+  executeStep(currentStep + 1);
+  if (currentStep < 40) {
+    intervalId = setTimeout(runNext, speed);
+  } else {
+    stopSim();
+  }
+}
+
+function pauseSim() {
+  playing = false;
+  clearTimeout(intervalId);
+  document.getElementById('play-btn').textContent = '▶ Resume';
+}
+
+function stopSim() {
+  playing = false;
+  clearTimeout(intervalId);
+  document.getElementById('play-btn').textContent = '▶ Replay';
+}
+
+function resetSim() {
+  stopSim();
+  currentStep = 0;
+  violations = 0;
+  CONSTRAINTS.forEach(c => { c.violatedAt = null; });
+  document.getElementById('timeline-fill').style.width = '0%';
+  document.getElementById('step-counter').textContent = 'Step 0 / 40';
+  document.getElementById('ctx-fill-bar').style.width = '0%';
+  document.getElementById('ctx-pct-label').textContent = '0% of 128k';
+  document.getElementById('ctx-pct-label').style.color = 'var(--ok)';
+  document.getElementById('violation-count').textContent = '0 violations';
+  document.getElementById('violation-count').style.color = 'var(--muted)';
+  document.getElementById('status-msg').textContent = '● Monitoring';
+  document.getElementById('status-msg').className = 'live';
+  document.getElementById('play-btn').textContent = '▶ Play';
+  document.getElementById('agent-dot').style.color = '';
+  document.getElementById('monitor-dot').style.color = '';
+  initLog();
+  initContext();
+  initConstraints();
+}
+
+function setSpeed(ms, btn) {
+  speed = ms;
+  document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+function scrubTo(e) {
+  const track = document.getElementById('timeline-track');
+  const rect = track.getBoundingClientRect();
+  const pct = (e.clientX - rect.left) / rect.width;
+  const targetStep = Math.max(1, Math.min(40, Math.round(pct * 40)));
+
+  pauseSim();
+  CONSTRAINTS.forEach(c => { c.violatedAt = null; });
+  violations = 0;
+  document.getElementById('violation-count').textContent = '0 violations';
+  document.getElementById('violation-count').style.color = 'var(--muted)';
+  document.getElementById('status-msg').textContent = '● Monitoring';
+  document.getElementById('status-msg').className = 'live';
+  initLog();
+  initContext();
+  initConstraints();
+  currentStep = 0;
+
+  // Fast-forward to target
+  for (let s = 1; s <= targetStep; s++) {
+    executeStep(s);
+  }
+  document.getElementById('play-btn').textContent = '▶ Resume';
+}
+
+// ── Boot ──────────────────────────────────────────────────────
+initContext();
+initConstraints();
+initLog();
+</script>
+
+</body>
+</html>
