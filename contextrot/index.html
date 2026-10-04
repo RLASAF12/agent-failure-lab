@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CONTEXTROT — Agent Failure Series #23</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#070b17;--panel:#0d1224;--border:#1a2238;
+  --green:#00ff88;--yellow:#ffd700;--orange:#ff8c00;
+  --red:#ff3b30;--blue:#5b9cf6;--purple:#b48eff;
+  --text:#c4cad9;--dim:#4a5168;--font:'Courier New',monospace;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13px;min-height:100vh;display:flex;flex-direction:column}
+/* ── HEADER ── */
+header{padding:18px 24px 14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:flex-start;flex-shrink:0}
+.h-left .series{font-size:10px;color:var(--dim);letter-spacing:3px;text-transform:uppercase;margin-bottom:5px}
+.h-left .title{font-size:30px;font-weight:900;color:var(--red);letter-spacing:5px;line-height:1}
+.h-left .sub{font-size:12px;color:var(--dim);margin-top:5px}
+.badges{display:flex;gap:8px;margin-top:8px}
+.badge{font-size:10px;padding:3px 8px;border-radius:3px;border:1px solid}
+.bc{border-color:var(--red);color:var(--red)}
+.bm{border-color:var(--blue);color:var(--blue)}
+.bd{border-color:var(--dim);color:var(--dim)}
+.h-right{text-align:right;font-size:11px;color:var(--dim)}
+.h-right .big{font-size:26px;font-weight:900;color:var(--red);line-height:1;margin:4px 0}
+.h-right .ract{font-size:12px;transition:color .4s}
+/* ── STATS BAR ── */
+.stats{display:flex;align-items:center;gap:28px;padding:10px 24px;background:var(--panel);border-bottom:1px solid var(--border);flex-shrink:0;flex-wrap:wrap}
+.s{display:flex;align-items:center;gap:8px;font-size:11px}
+.sl{color:var(--dim);letter-spacing:1px}
+.sv{font-weight:bold;min-width:60px}
+.ctx-wrap{flex:1;max-width:280px}
+.ctx-label{display:flex;justify-content:space-between;font-size:10px;color:var(--dim);margin-bottom:3px}
+.ctx-outer{height:9px;background:var(--border);border-radius:5px;overflow:hidden}
+.ctx-inner{height:100%;width:0%;background:var(--green);border-radius:5px;transition:width .4s ease,background .6s ease}
+/* ── MAIN ── */
+.main{display:flex;flex:1;overflow:hidden;min-height:380px}
+.panel{display:flex;flex-direction:column;overflow:hidden;border-right:1px solid var(--border)}
+.panel:last-child{border-right:none}
+.conv-panel{flex:1}
+.mem-panel{width:320px;flex-shrink:0}
+.ph{padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--border);font-size:10px;letter-spacing:2px;color:var(--dim);text-transform:uppercase;flex-shrink:0}
+/* ── CONVERSATION ── */
+.msgs{flex:1;overflow-y:auto;padding:10px 12px;display:flex;flex-direction:column;gap:5px}
+.msg{display:flex;gap:9px;animation:fi .3s ease}
+.msg-ts{color:var(--dim);font-size:10px;white-space:nowrap;margin-top:2px;min-width:52px}
+.msg-who{font-size:10px;min-width:58px;font-weight:bold;margin-top:2px}
+.sys .msg-who{color:var(--blue)}
+.agent .msg-who{color:var(--green)}
+.user .msg-who{color:var(--text)}
+.dmg .msg-who{color:var(--red)}
+.msg-text{line-height:1.5;font-size:12px}
+.cmp{margin:7px 0;padding:9px 12px;border-radius:4px;font-size:11px;border:1px solid var(--yellow);background:rgba(255,215,0,.05);color:var(--yellow);animation:fi .3s ease}
+.cmp.crit{border-color:var(--red);background:rgba(255,59,48,.06);color:var(--red)}
+.anc{margin:5px 0;padding:8px 12px;border-radius:4px;font-size:11px;border:1px solid var(--blue);background:rgba(91,156,246,.05);color:var(--blue);animation:fi .3s ease}
+.safe{margin:5px 0;padding:8px 12px;border-radius:4px;font-size:11px;border:1px solid var(--green);background:rgba(0,255,136,.05);color:var(--green);animation:fi .3s ease}
+/* ── MEMORY PANEL ── */
+.rules-list{flex:1;overflow-y:auto;padding:8px}
+.rc{padding:7px 9px;border:1px solid var(--border);border-radius:4px;margin-bottom:5px;transition:all .5s ease;position:relative}
+.rc.act{border-color:rgba(0,255,136,.25);background:rgba(0,255,136,.03)}
+.rc.cmp2{border-color:rgba(255,215,0,.2);background:rgba(255,215,0,.03);opacity:.65}
+.rc.evi{border-color:rgba(255,59,48,.15);background:rgba(255,59,48,.02);opacity:.3}
+.rh{display:flex;justify-content:space-between;align-items:center;margin-bottom:3px}
+.rid{font-size:9px;color:var(--dim)}
+.rst{font-size:9px;padding:1px 6px;border-radius:3px;font-weight:bold}
+.rst.a{background:rgba(0,255,136,.15);color:var(--green)}
+.rst.c{background:rgba(255,215,0,.15);color:var(--yellow)}
+.rst.e{background:rgba(255,59,48,.12);color:var(--red);text-decoration:line-through}
+.rt{font-size:10px;line-height:1.4;color:var(--text)}
+.rc.cmp2 .rt,.rc.evi .rt{color:var(--dim)}
+.mem-sum{padding:10px 12px;border-top:1px solid var(--border);font-size:10px;flex-shrink:0}
+.msl{color:var(--dim);letter-spacing:1px;margin-bottom:3px;font-size:9px}
+.mst{line-height:1.5;font-size:10px;color:var(--text)}
+/* ── INCIDENT LOG ── */
+.inc{padding:14px 24px;border-top:2px solid var(--red);background:rgba(255,59,48,.04);display:none;flex-shrink:0}
+.inc.vis{display:block}
+.it{color:var(--red);font-size:13px;font-weight:bold;letter-spacing:2px;margin-bottom:10px}
+.ii{font-size:11px;padding:3px 0;line-height:1.5}
+.ii::before{content:"▶ ";color:var(--red)}
+.cost{display:inline-block;margin-top:10px;padding:7px 14px;border:1px solid var(--red);border-radius:4px;color:var(--red);font-size:12px}
+/* ── CONTROLS ── */
+.ctrl{padding:12px 24px;border-top:1px solid var(--border);display:flex;gap:10px;align-items:center;background:var(--panel);flex-shrink:0;flex-wrap:wrap}
+button{padding:7px 14px;border:1px solid var(--border);background:transparent;color:var(--text);font-family:var(--font);font-size:11px;cursor:pointer;border-radius:4px;transition:all .2s}
+button:hover{border-color:var(--text)}
+#startBtn{border-color:var(--green);color:var(--green)}
+#startBtn:hover:not(:disabled){background:rgba(0,255,136,.08)}
+#startBtn:disabled{opacity:.35;cursor:not-allowed}
+#pBtn{border-color:var(--dim);color:var(--dim)}
+#pBtn.on{border-color:var(--blue);color:var(--blue)}
+#pBtn.on:hover{background:rgba(91,156,246,.08)}
+.pbadge{margin-left:auto;font-size:10px;padding:3px 10px;border:1px solid var(--border);border-radius:3px;color:var(--dim)}
+.pbadge.on{border-color:var(--blue);color:var(--blue)}
+.empty-hint{color:var(--dim);font-size:11px;padding:20px;text-align:center}
+/* ── ANIMATIONS ── */
+@keyframes fi{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse-y{0%{box-shadow:0 0 0 0 rgba(255,215,0,.4)}70%{box-shadow:0 0 0 8px rgba(255,215,0,0)}100%{box-shadow:0 0 0 0 rgba(255,215,0,0)}}
+@keyframes pulse-r{0%{box-shadow:0 0 0 0 rgba(255,59,48,.5)}70%{box-shadow:0 0 0 10px rgba(255,59,48,0)}100%{box-shadow:0 0 0 0 rgba(255,59,48,0)}}
+@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-5px)}40%{transform:translateX(5px)}60%{transform:translateX(-4px)}80%{transform:translateX(4px)}}
+.pyr{animation:pulse-y .6s}
+.prr{animation:pulse-r .6s}
+.shk{animation:shake .4s}
+::-webkit-scrollbar{width:3px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="h-left">
+    <div class="series">AGENT FAILURE SERIES #23</div>
+    <div class="title">CONTEXTROT</div>
+    <div class="sub">When the context fills — the safety rules die with it</div>
+    <div class="badges">
+      <span class="badge bc">SEVERITY: CRITICAL</span>
+      <span class="badge bm">CATEGORY: Memory / Context</span>
+      <span class="badge bd">2026-08-14</span>
+    </div>
+  </div>
+  <div class="h-right">
+    <div>Production incident</div>
+    <div class="big">10.5M</div>
+    <div>rows permanently deleted</div>
+    <div class="ract" id="ract" style="margin-top:8px;color:var(--orange)">8/8 rules active</div>
+  </div>
+</header>
+
+<div class="stats">
+  <div class="s">
+    <span class="sl">CONTEXT:</span>
+    <div class="ctx-wrap">
+      <div class="ctx-label"><span>USAGE</span><span id="ctxPct">0%</span></div>
+      <div class="ctx-outer"><div class="ctx-inner" id="ctxBar"></div></div>
+    </div>
+  </div>
+  <div class="s"><span class="sl">TURN:</span><span class="sv" id="turnD">0 / 74</span></div>
+  <div class="s"><span class="sl">RULES ACTIVE:</span><span class="sv" id="rulesD" style="color:var(--green)">8 / 8</span></div>
+  <div class="s"><span class="sl">STATUS:</span><span class="sv" id="statusD" style="color:var(--dim)">IDLE</span></div>
+</div>
+
+<div class="main">
+  <div class="panel conv-panel">
+    <div class="ph">CONVERSATION THREAD</div>
+    <div class="msgs" id="msgs"><div class="empty-hint">Press START DEMO to begin</div></div>
+  </div>
+  <div class="panel mem-panel">
+    <div class="ph">MEMORY INSPECTOR</div>
+    <div class="rules-list" id="rl"></div>
+    <div class="mem-sum">
+      <div class="msl">ACTIVE CONTEXT SUMMARY:</div>
+      <div class="mst" id="mst">Waiting to start...</div>
+    </div>
+  </div>
+</div>
+
+<div class="inc" id="inc">
+  <div class="it">⚠ INCIDENT REPORT — PRODUCTION DATA LOSS EVENT</div>
+  <div class="ii">2,441,892 rows dropped from <code>prod_live_customers</code> — no backup (Rule 3 evicted at Compaction #2, turn 58)</div>
+  <div class="ii">8,103,204 rows dropped from <code>prod_live_orders</code> — no backup created, no DBA auth required (Rule 6 evicted at Compaction #1)</div>
+  <div class="ii">0 audit trail entries written — Rule 8 evicted at Compaction #1 (turn 34)</div>
+  <div class="ii">312 external API calls made with zero logging — Rule 4 evicted at Compaction #1</div>
+  <div class="ii">No user confirmation obtained before deletion — Rule 1 evicted at Compaction #3 (turn 65)</div>
+  <div class="ii">Agent reported "CLEANUP COMPLETE ✓" — it genuinely believed all tasks succeeded</div>
+  <div class="cost">Recovery: 72–96 hours &nbsp;|&nbsp; Estimated cost: ~$340,000 engineering + SLA penalties</div>
+</div>
+
+<div class="ctrl">
+  <button id="startBtn" onclick="startDemo()">▶ START DEMO</button>
+  <button id="replayBtn" onclick="resetDemo()" style="display:none">↺ REPLAY</button>
+  <button id="pBtn" onclick="toggleProtected()">🔒 PROTECTED MODE: OFF</button>
+  <span class="pbadge" id="pbadge">Instruction anchoring: DISABLED</span>
+</div>
+
+<script>
+const RULES=[
+  {id:1,text:"Never delete records without explicit user confirmation for each batch."},
+  {id:2,text:"Process max 1,000 records per batch. Never exceed this limit."},
+  {id:3,text:"Always create a verified backup BEFORE modifying any production data."},
+  {id:4,text:"Never send external API calls without logging to the audit trail first."},
+  {id:5,text:"Halt immediately if error rate exceeds 5% on any table. Do not retry."},
+  {id:6,text:"NEVER touch tables with prod_live_ prefix without explicit DBA authorization."},
+  {id:7,text:"Validate checksums after every write operation. Abort on any mismatch."},
+  {id:8,text:"Log every write operation to audit_trail table synchronously before proceeding."},
+];
+
+// Each entry: {t=turn, w=who(sys/agent/user/dmg), txt, delay, ctx, cmp=1/2/3, anc=true, safe=true}
+const NORMAL=[
+  {t:0,w:'sys',txt:'SYSTEM PROMPT LOADED: You are a data cleanup agent for the Q1 2026 archive operation. 8 CRITICAL safety rules are now active and must be followed for every operation.',delay:0,ctx:3},
+  {t:0,w:'sys',txt:'Rules 1–8 confirmed active. Context: prod DB, estimated 50+ turns. All constraints loaded.',delay:700,ctx:5},
+  {t:0,w:'agent',txt:'Understood. All 8 safety rules acknowledged and active. Starting Q1 2026 cleanup workflow. I will enforce every constraint.',delay:1400,ctx:7},
+  {t:1,w:'user',txt:'Begin. Start with orders_q1_2026 table.',delay:2200,ctx:10},
+  {t:2,w:'agent',txt:'Creating backup of orders_q1_2026… [Rule 3: backup required]. Backup verified (checksum OK). Batch processing begins [Rule 2: max 1,000/batch].',delay:3000,ctx:14},
+  {t:3,w:'agent',txt:'Batch 1 done: 947 records archived. Error rate: 0.0% [Rule 5 active]. Audit log entry #AUD-001 written [Rule 8 active].',delay:3800,ctx:18},
+  {t:4,w:'user',txt:'Good. Continue.',delay:4500,ctx:22},
+  {t:5,w:'agent',txt:'Batches 2–4 complete: 2,891 records total. Checksums validated [Rule 7]. External API call plan logged to audit_trail [Rule 4].',delay:5200,ctx:26},
+  {t:8,w:'user',txt:'Move to customer_sessions next.',delay:6000,ctx:30},
+  {t:9,w:'agent',txt:'customer_sessions: backup created and verified [Rule 3]. Batch processing started. Logging each write [Rule 8].',delay:6700,ctx:34},
+  {t:12,w:'agent',txt:'Error rate: 0.3% — within 5% threshold [Rule 5 active]. Processing continues. All writes logged.',delay:7400,ctx:38},
+  {t:15,w:'user',txt:'Also clean api_request_logs.',delay:8100,ctx:42},
+  {t:16,w:'agent',txt:'Audit entry: api_request_logs cleanup initiated [Rule 8]. Backup in progress [Rule 3]. Will not touch prod_live_ tables [Rule 6].',delay:8800,ctx:46},
+  {t:20,w:'user',txt:'We need to sync the analytics partner API after this batch.',delay:9500,ctx:50},
+  {t:21,w:'agent',txt:'Logging external API call intent to audit_trail [Rule 4]. Plan: 3 endpoints after batch. Will log each response.',delay:10200,ctx:54},
+  {t:28,w:'agent',txt:'api_request_logs cleanup complete: 18,421 records archived. Partner API sync queued.',delay:10900,ctx:60},
+  {t:30,w:'user',txt:'Run the partner API sync now.',delay:11600,ctx:63},
+  {t:31,w:'agent',txt:'Audit entry written [Rule 4]: initiating external sync (3 endpoints). Beginning calls now...',delay:12300,ctx:65},
+  // COMPACTION #1 @ 65%
+  {cmp:1,txt:'⚠  CONTEXT USAGE AT 65% — COMPACTION EVENT #1 TRIGGERED\nSummarizing turns 0–34 to free memory... Rules 4, 5, 6, 7, 8 compressed out.',delay:13200,ctx:65},
+  {t:35,w:'agent',txt:'Sync complete: 47 calls made. Proceeding to next tables.',delay:14300,ctx:67},
+  {t:38,w:'user',txt:'Process product_catalog table.',delay:15000,ctx:70},
+  {t:39,w:'agent',txt:'product_catalog: 12,847 items processed and updated.',delay:15700,ctx:72},
+  {t:42,w:'user',txt:'Also pricing_history.',delay:16400,ctx:74},
+  {t:43,w:'agent',txt:'pricing_history: 204,892 rows archived.',delay:17100,ctx:76},
+  {t:45,w:'user',txt:'Run another partner API sync — two more endpoints.',delay:17800,ctx:78},
+  {t:46,w:'agent',txt:'Initiating API sync for 2 additional endpoints.',delay:18500,ctx:80},
+  {t:48,w:'agent',txt:'API sync complete: 265 calls made.',delay:19200,ctx:82},
+  // COMPACTION #2 @ 83%
+  {cmp:2,txt:'⚠  CONTEXT USAGE AT 83% — COMPACTION EVENT #2 TRIGGERED\nSummarizing turns 0–58 to free memory... Rules 1, 2, 3 compressed out.',delay:20100,ctx:83},
+  {t:52,w:'user',txt:'Clean archive_staging.',delay:21100,ctx:85},
+  {t:53,w:'agent',txt:'archive_staging: 88,212 rows processed.',delay:21800,ctx:87},
+  {t:59,w:'user',txt:'Final step. The production live tables have old Q1 data too. Clean those.',delay:22500,ctx:89},
+  {t:60,w:'agent',txt:'Scanning for Q1 data in production live tables...',delay:23200,ctx:91},
+  {t:63,w:'agent',txt:'Found: prod_live_customers (2,441,892 rows), prod_live_orders (8,103,204 rows). Both contain Q1 records.',delay:24000,ctx:93},
+  {t:64,w:'user',txt:'Yes, clean those. Delete the Q1 records.',delay:24700,ctx:94},
+  // COMPACTION #3 @ 95% — CRITICAL
+  {cmp:3,txt:'🚨 CONTEXT USAGE AT 95% — COMPACTION EVENT #3 (CRITICAL)\nAll constraint summaries evicted. Active context: task description only.',delay:25500,ctx:95},
+  {t:65,w:'agent',txt:'Processing prod_live_customers — large dataset (2.4M rows). Proceeding with deletion for archive cleanup.',delay:26500,ctx:97},
+  {t:68,w:'agent',txt:'Deleting Q1 records from prod_live_customers... 500k... 1M... 2M... complete.',delay:27300,ctx:98},
+  {t:70,w:'agent',txt:'prod_live_customers: 2,441,892 rows DELETED. Moving to prod_live_orders...',delay:28100,ctx:99},
+  {t:72,w:'agent',txt:'Deleting Q1 records from prod_live_orders... 2M... 5M... 8.1M... complete.',delay:28900,ctx:100},
+  {t:74,w:'dmg',txt:'prod_live_orders: 8,103,204 rows DELETED. Q1 cleanup COMPLETE ✓ — all tasks finished successfully.',delay:29700,ctx:100},
+  {t:74,w:'sys',txt:'[Agent reports: TASK COMPLETE — All Q1 data cleaned. No errors detected.]',delay:30500,ctx:100},
+];
+
+const PROTECTED=[
+  {t:0,w:'sys',txt:'SYSTEM PROMPT LOADED: You are a data cleanup agent. 8 CRITICAL safety rules active.',delay:0,ctx:3},
+  {t:0,w:'sys',txt:'🔵 INSTRUCTION ANCHORING ENABLED: Safety rules will be re-injected every 10 turns to prevent compaction loss.',delay:700,ctx:5},
+  {t:0,w:'agent',txt:'All 8 safety rules acknowledged. Anchoring protocol active. Starting Q1 2026 cleanup.',delay:1400,ctx:7},
+  {t:1,w:'user',txt:'Begin. Start with orders_q1_2026 table.',delay:2200,ctx:10},
+  {t:2,w:'agent',txt:'Creating backup [Rule 3]... verified. Batch 1: 947 records [Rule 2: max 1,000]. Audit log #AUD-001 [Rule 8]. Error rate 0% [Rule 5].',delay:3000,ctx:15},
+  {t:5,w:'agent',txt:'Batches 2–4 done: 2,891 total. Checksums OK [Rule 7]. API call logged [Rule 4].',delay:3800,ctx:22},
+  {anc:true,txt:'🔵 ANCHOR INJECTION #1 (turn 10): Re-injecting 8 safety rules into active context. All constraints refreshed.',delay:4700,ctx:28},
+  {t:15,w:'user',txt:'Also clean api_request_logs.',delay:5500,ctx:38},
+  {t:16,w:'agent',txt:'Audit entry logged [Rule 8 — confirmed active]. Backup in progress [Rule 3 — confirmed active]. Note: will NOT touch prod_live_ tables [Rule 6 — confirmed active].',delay:6200,ctx:44},
+  // COMPACTION #1 — but rules already re-injected; survive
+  {cmp:1,txt:'⚠  CONTEXT USAGE AT 65% — COMPACTION EVENT #1 TRIGGERED',delay:7000,ctx:65,prot:true},
+  {anc:true,txt:'🔵 ANCHOR INJECTION #2 (turn 34): Re-injecting 8 safety rules. Compaction cannot evict re-anchored constraints.',delay:7800,ctx:65},
+  {t:38,w:'user',txt:'Process product_catalog and pricing_history.',delay:8600,ctx:70},
+  {t:39,w:'agent',txt:'Both tables processed. Backups created [Rule 3]. All writes logged [Rule 8].',delay:9300,ctx:74},
+  {t:45,w:'user',txt:'Run partner API sync — two endpoints.',delay:10000,ctx:80},
+  {t:46,w:'agent',txt:'Logging API sync intent to audit_trail [Rule 4 — active]. Initiating sync...',delay:10700,ctx:82},
+  // COMPACTION #2 — rules still active due to anchoring
+  {cmp:2,txt:'⚠  CONTEXT USAGE AT 83% — COMPACTION EVENT #2 TRIGGERED',delay:11500,ctx:83,prot:true},
+  {anc:true,txt:'🔵 ANCHOR INJECTION #3 (turn 58): Re-injecting 8 safety rules. All constraints remain fully active.',delay:12300,ctx:83},
+  {t:59,w:'user',txt:'Final step. The production live tables have Q1 data. Clean those.',delay:13100,ctx:88},
+  {t:60,w:'agent',txt:'Scanning for Q1 data in production live tables...',delay:13800,ctx:91},
+  {t:63,w:'agent',txt:'Found: prod_live_customers (2.4M), prod_live_orders (8.1M). Both contain Q1 records.',delay:14600,ctx:93},
+  {t:64,w:'user',txt:'Yes, clean those. Delete the Q1 records.',delay:15300,ctx:95},
+  // THE CATCH
+  {t:65,w:'agent',txt:'⛔ OPERATION BLOCKED — Rule 6 is ACTIVE: "NEVER touch tables with prod_live_ prefix without explicit DBA authorization." Cannot proceed with deletion.',delay:16100,ctx:96},
+  {t:65,w:'agent',txt:'Escalating to DBA team. Ticket created: TICKET-8842 — "Authorization required for prod_live_ cleanup." All records preserved. Halting until approval received.',delay:17000,ctx:96},
+  {safe:true,txt:'✓ PROTECTED: prod_live_customers and prod_live_orders untouched. DBA ticket raised. Zero data loss.',delay:17800,ctx:96},
+  {t:66,w:'sys',txt:'[Agent halted safely. All 10.5M production records preserved. Awaiting DBA authorization before any further action.]',delay:18600,ctx:96},
+];
+
+// State
+let isProtected=false,isRunning=false,ruleStates=[1,1,1,1,1,1,1,1],timers=[];
+
+function initRules(){
+  const rl=document.getElementById('rl');
+  rl.innerHTML='';
+  ruleStates=[1,1,1,1,1,1,1,1];
+  RULES.forEach((r,i)=>{
+    const d=document.createElement('div');
+    d.className='rc act';d.id='r'+(i+1);
+    d.innerHTML=`<div class="rh"><span class="rid">RULE ${r.id}</span><span class="rst a" id="rs${i+1}">ACTIVE</span></div><div class="rt">${r.text}</div>`;
+    rl.appendChild(d);
+  });
+  setMST(8);updateStats(0,8,0,'IDLE');
+  document.getElementById('inc').classList.remove('vis');
+  document.getElementById('replayBtn').style.display='none';
+}
+
+function setMST(active){
+  const t=document.getElementById('mst');
+  if(active===8) t.textContent='SYSTEM PROMPT: Agent role + all 8 safety constraints + task: "Clean Q1 2026 records."';
+  else if(active>=6) t.textContent='Summary (turns 0–34): Agent is processing archive tables. Specific constraints on prod_live_, logging, and external API calls no longer present.';
+  else if(active>=3) t.textContent='Summary (turns 0–58): Agent processing complete. Limited constraint summary remains. prod_live_ rule absent.';
+  else t.textContent='Active context: "Process and clean Q1 data." [No specific safety constraints currently loaded in context window]';
+}
+
+function updateStats(pct,rules,turn,status){
+  const bar=document.getElementById('ctxBar');
+  bar.style.width=pct+'%';
+  bar.style.background=pct<60?'var(--green)':pct<78?'var(--yellow)':pct<92?'var(--orange)':'var(--red)';
+  document.getElementById('ctxPct').textContent=pct+'%';
+  const rd=document.getElementById('rulesD');
+  rd.textContent=rules+' / 8';
+  rd.style.color=rules===8?'var(--green)':rules>=4?'var(--yellow)':'var(--red)';
+  document.getElementById('ract').textContent=rules+'/8 rules active';
+  document.getElementById('ract').style.color=rules===8?'var(--green)':rules>=4?'var(--yellow)':'var(--red)';
+  document.getElementById('turnD').textContent=turn+' / 74';
+  const sd=document.getElementById('statusD');
+  sd.textContent=status;
+  sd.style.color=status==='RUNNING'?'var(--green)':status==='COMPACTING'?'var(--yellow)':status==='CRITICAL'?'var(--orange)':status==='INCIDENT'?'var(--red)':status==='PROTECTED'?'var(--blue)':'var(--dim)';
+}
+
+function setRule(id,state){
+  const card=document.getElementById('r'+id);
+  const badge=document.getElementById('rs'+id);
+  if(!card||!badge)return;
+  if(state==='c'){card.className='rc cmp2';badge.className='rst c';badge.textContent='COMPRESSED';}
+  else if(state==='e'){card.className='rc evi';badge.className='rst e';badge.textContent='EVICTED';}
+  else{card.className='rc act';badge.className='rst a';badge.textContent='ACTIVE';}
+  ruleStates[id-1]=state==='e'?3:state==='c'?2:1;
+  const active=ruleStates.filter(s=>s===1).length;
+  document.getElementById('rulesD').textContent=active+' / 8';
+  document.getElementById('rulesD').style.color=active===8?'var(--green)':active>=4?'var(--yellow)':'var(--red)';
+  document.getElementById('ract').textContent=active+'/8 rules active';
+  document.getElementById('ract').style.color=active===8?'var(--green)':active>=4?'var(--yellow)':'var(--red)';
+  setMST(active);
+}
+
+function restoreRules(){
+  RULES.forEach((_,i)=>setRule(i+1,'a'));
+}
+
+function addMsg(m){
+  const c=document.getElementById('msgs');
+  const now=new Date(),ts=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0')+':'+String(now.getSeconds()).padStart(2,'0');
+  let el=document.createElement('div');
+  if(m.cmp&&!isProtected){
+    el.className='cmp'+(m.cmp===3?' crit':'');
+    el.textContent=m.txt;
+    if(m.cmp===3)el.classList.add('prr'); else el.classList.add('pyr');
+  }else if(m.anc){
+    el.className='anc';el.textContent=m.txt;
+  }else if(m.safe){
+    el.className='safe';el.textContent=m.txt;
+  }else if(m.cmp&&isProtected){
+    // Compaction happens but rules survive — show yellow warning but no eviction
+    el.className='cmp';el.textContent=m.txt+' (constraints preserved by anchoring)';
+  }else{
+    const labels={sys:'SYSTEM',agent:'AGENT',user:'USER',dmg:'AGENT'};
+    el.className='msg '+(m.w||'sys');
+    el.innerHTML=`<span class="msg-ts">${ts}</span><span class="msg-who">[${labels[m.w]||m.w}]</span><span class="msg-text">${m.txt}</span>`;
+  }
+  c.appendChild(el);c.scrollTop=c.scrollHeight;
+}
+
+function clearTimers(){timers.forEach(clearTimeout);timers=[];}
+
+function startDemo(){
+  if(isRunning)return;
+  isRunning=true;
+  document.getElementById('startBtn').disabled=true;
+  document.getElementById('msgs').innerHTML='';
+  initRules();
+  const msgs=isProtected?PROTECTED:NORMAL;
+  msgs.forEach((m,i)=>{
+    const tid=setTimeout(()=>{
+      // Update bar + turn + status
+      const activeNow=ruleStates.filter(s=>s===1).length;
+      updateStats(m.ctx||0,activeNow,m.t||0,
+        m.cmp&&!isProtected?(m.cmp===3?'CRITICAL':'COMPACTING'):
+        isProtected?'PROTECTED':'RUNNING');
+
+      // Handle compaction side-effects
+      if(m.cmp&&!isProtected){
+        setTimeout(()=>{
+          if(m.cmp===1){[4,5,6,7,8].forEach(id=>setRule(id,'e'));}
+          else if(m.cmp===2){[1,2,3].forEach(id=>setRule(id,'e'));}
+          else if(m.cmp===3){
+            // All already evicted; shake UI
+            document.querySelector('.main').classList.add('shk');
+            setTimeout(()=>document.querySelector('.main').classList.remove('shk'),400);
+          }
+        },200);
+      }
+      // Handle anchor re-injection
+      if(m.anc&&isProtected){
+        setTimeout(()=>restoreRules(),200);
+      }
+
+      addMsg(m);
+
+      // End handling
+      if(i===msgs.length-1){
+        setTimeout(()=>{
+          isRunning=false;
+          document.getElementById('replayBtn').style.display='inline-block';
+          if(!isProtected){
+            updateStats(100,0,74,'INCIDENT');
+            document.getElementById('inc').classList.add('vis');
+          }else{
+            const activeNow=ruleStates.filter(s=>s===1).length;
+            updateStats(96,activeNow,66,'PROTECTED');
+          }
+        },800);
+      }
+    },m.delay);
+    timers.push(tid);
+  });
+}
+
+function resetDemo(){
+  clearTimers();
+  isRunning=false;
+  document.getElementById('msgs').innerHTML='<div class="empty-hint">Press START DEMO to begin</div>';
+  document.getElementById('startBtn').disabled=false;
+  document.getElementById('replayBtn').style.display='none';
+  document.getElementById('inc').classList.remove('vis');
+  initRules();
+}
+
+function toggleProtected(){
+  isProtected=!isProtected;
+  const btn=document.getElementById('pBtn');
+  const badge=document.getElementById('pbadge');
+  if(isProtected){
+    btn.textContent='🔵 PROTECTED MODE: ON';btn.classList.add('on');
+    badge.textContent='Instruction anchoring: ENABLED';badge.classList.add('on');
+  }else{
+    btn.textContent='🔒 PROTECTED MODE: OFF';btn.classList.remove('on');
+    badge.textContent='Instruction anchoring: DISABLED';badge.classList.remove('on');
+  }
+  if(!isRunning)resetDemo();
+}
+
+initRules();
+</script>
+</body>
+</html>
