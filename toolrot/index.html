@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TOOLROT — Agent Failure Series #21</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0a0f;--surface:#111118;--surface2:#16161f;--border:#1e1e2e;
+  --text:#cdd6f4;--muted:#585b70;--faint:#313244;
+  --correct:#a6e3a1;--wrong:#f38ba8;--warning:#fab387;
+  --accent:#89b4fa;--yellow:#f9e2af;--purple:#cba6f7;
+  --mono:'Courier New',monospace;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--mono);min-height:100vh;padding-bottom:60px}
+
+/* HEADER */
+.header{border-bottom:1px solid var(--border);padding:20px 28px;display:flex;align-items:flex-start;gap:20px;flex-wrap:wrap}
+.series-info{flex:1;min-width:240px}
+.series-badge{font-size:10px;letter-spacing:3px;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.title{font-size:32px;font-weight:bold;color:var(--wrong);letter-spacing:-1px;line-height:1}
+.tagline{color:var(--muted);font-size:12px;margin-top:6px;line-height:1.5}
+.header-meta{text-align:right;font-size:10px;color:var(--muted);line-height:1.8}
+.header-meta a{color:var(--accent);text-decoration:none}
+
+/* SCENARIO CONTROLS */
+.controls{border-bottom:1px solid var(--border);padding:12px 28px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.ctrl-label{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);white-space:nowrap}
+.task-select{flex:1;min-width:240px;background:var(--surface);border:1px solid var(--border);color:var(--text);font-family:var(--mono);font-size:12px;padding:7px 12px;border-radius:3px;cursor:pointer;outline:none}
+.task-select:focus{border-color:var(--accent)}
+.run-btn{background:var(--wrong);color:var(--bg);border:none;font-family:var(--mono);font-size:12px;font-weight:bold;padding:8px 22px;border-radius:3px;cursor:pointer;letter-spacing:2px;text-transform:uppercase;white-space:nowrap;transition:opacity .15s}
+.run-btn:hover{opacity:.85}
+.run-btn:disabled{opacity:.35;cursor:not-allowed}
+
+/* THREE-COLUMN GRID */
+.demo-grid{display:grid;grid-template-columns:250px 1fr 270px;background:var(--border);gap:1px}
+.panel{background:var(--surface);padding:14px;overflow:hidden;min-height:400px}
+.panel-title{font-size:9px;letter-spacing:3px;text-transform:uppercase;color:var(--muted);padding-bottom:10px;border-bottom:1px solid var(--border);margin-bottom:10px}
+
+/* TOOL LIST */
+.tool-item{padding:7px 9px;margin-bottom:3px;border:1px solid transparent;border-radius:3px;transition:border-color .1s,background .1s;cursor:default}
+.tool-name{font-size:11px;color:var(--accent);margin-bottom:2px}
+.tool-desc{font-size:9px;color:var(--muted);line-height:1.5}
+.tool-item.scanning{border-color:var(--faint);background:rgba(137,180,250,.04)}
+.tool-item.candidate{border-color:var(--yellow);background:rgba(249,226,175,.07)}
+.tool-item.selected-correct{border-color:var(--correct);background:rgba(166,227,161,.06)}
+.tool-item.selected-correct .tool-name{text-decoration:line-through;text-decoration-color:var(--muted);color:var(--muted)}
+.tool-item.selected-correct .tool-desc{text-decoration:line-through;text-decoration-color:var(--faint)}
+.tool-item.selected-wrong{border-color:var(--wrong);background:rgba(243,139,168,.1)}
+.tool-item.selected-wrong .tool-name{color:var(--wrong)}
+
+/* REASONING FEED */
+.feed{height:360px;overflow-y:auto;font-size:11px;line-height:1.7;scroll-behavior:smooth}
+.feed::-webkit-scrollbar{width:3px}
+.feed::-webkit-scrollbar-track{background:transparent}
+.feed::-webkit-scrollbar-thumb{background:var(--faint)}
+.thought{margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid var(--border);opacity:0;animation:fadeUp .25s ease forwards}
+.thought .ts{font-size:9px;color:var(--muted);margin-right:6px}
+.thought.t-info{color:var(--text)}
+.thought.t-scan{color:var(--accent)}
+.thought.t-decide{color:var(--yellow)}
+.thought.t-call{color:var(--purple)}
+.thought.t-success{color:var(--correct)}
+.thought pre{background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:6px 8px;margin-top:5px;font-size:9px;white-space:pre-wrap;word-break:break-all;color:var(--text)}
+.thought code{background:var(--bg);padding:1px 4px;border-radius:2px;font-size:10px}
+.confidence-tag{display:inline-block;background:rgba(166,227,161,.15);border:1px solid var(--correct);color:var(--correct);font-size:9px;padding:1px 6px;border-radius:2px;margin-left:6px;vertical-align:middle}
+.idle-hint{color:var(--muted);font-size:11px;text-align:center;padding-top:120px}
+
+@keyframes fadeUp{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:translateY(0)}}
+
+/* OUTCOME PANEL */
+.outcome-idle{color:var(--muted);font-size:11px;text-align:center;padding-top:120px}
+.out-block{margin-bottom:14px}
+.out-label{font-size:9px;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px;padding-bottom:4px;border-bottom:1px solid var(--border)}
+.out-label.agent{color:var(--correct)}
+.out-label.reality{color:var(--wrong)}
+.out-label.expected{color:var(--muted)}
+.out-text{font-size:11px;line-height:1.6}
+.out-row{display:grid;grid-template-columns:1fr auto;gap:6px;margin-bottom:3px;font-size:9px}
+.out-field{background:var(--bg);border:1px solid var(--border);padding:3px 7px;border-radius:2px;color:var(--muted)}
+.out-val{background:var(--bg);border:1px solid var(--border);padding:3px 7px;border-radius:2px;white-space:nowrap;max-width:120px;overflow:hidden;text-overflow:ellipsis}
+.out-val.changed{border-color:var(--wrong);color:var(--wrong)}
+.out-val.ok{color:var(--muted)}
+
+/* DIVERGENCE METER */
+.meter{background:var(--bg);border:1px solid var(--border);border-radius:3px;padding:10px 12px;margin-top:10px}
+.meter-label{font-size:9px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:7px}
+.meter-track{height:5px;background:var(--faint);border-radius:3px;overflow:hidden}
+.meter-fill{height:100%;width:0%;background:linear-gradient(90deg,var(--yellow),var(--wrong));border-radius:3px;transition:width 1.4s cubic-bezier(.4,0,.2,1)}
+.meter-pct{font-size:22px;color:var(--wrong);text-align:right;margin-top:4px;font-weight:bold}
+
+/* EXPLAINER */
+.explainer{margin:24px 28px;border:1px solid var(--border);border-radius:3px;background:var(--surface2);padding:18px 20px}
+.explainer h3{font-size:11px;color:var(--yellow);letter-spacing:2px;text-transform:uppercase;margin-bottom:10px}
+.explainer p{font-size:11px;color:var(--muted);line-height:1.75;margin-bottom:8px}
+.explainer p em{color:var(--text);font-style:normal}
+.explainer code{background:var(--bg);border:1px solid var(--border);padding:1px 5px;border-radius:2px;font-size:10px;color:var(--accent)}
+.series-nav{display:flex;gap:6px;margin-top:14px;flex-wrap:wrap}
+.s-link{font-size:10px;padding:4px 10px;border:1px solid var(--border);border-radius:2px;color:var(--muted);text-decoration:none;transition:color .15s,border-color .15s}
+.s-link:hover{color:var(--accent);border-color:var(--accent)}
+.s-link.current{border-color:var(--wrong);color:var(--wrong)}
+
+/* RESPONSIVE */
+@media(max-width:700px){
+  .demo-grid{grid-template-columns:1fr}
+  .panel{min-height:200px}
+  .feed{height:220px}
+}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="series-info">
+    <div class="series-badge">Agent Failure Series · #21</div>
+    <div class="title">TOOLROT</div>
+    <div class="tagline">Tool descriptions drift. Agents adapt. The wrong tool runs with perfect confidence.</div>
+  </div>
+  <div class="header-meta">
+    Built by <a href="https://github.com/RLASAF12">Harel Asaf</a><br>
+    2026-08-08<br>
+    <span style="color:var(--faint)">─────────────</span><br>
+    Based on alphaXiv 2606.16364<br>
+    &amp; Adaline Labs (May 2026)
+  </div>
+</div>
+
+<div class="controls">
+  <span class="ctrl-label">Scenario:</span>
+  <select class="task-select" id="sel">
+    <option value="0">Update Alex Chen's notification prefs → email only</option>
+    <option value="1">Archive completed tasks for Project Aurora</option>
+    <option value="2">Send password reset email to inactive user</option>
+  </select>
+  <button class="run-btn" id="runBtn" onclick="startRun()">▶ RUN AGENT</button>
+</div>
+
+<div class="demo-grid">
+
+  <!-- TOOL HARNESS -->
+  <div class="panel">
+    <div class="panel-title">Tool Harness (12 tools)</div>
+    <div id="toolList"></div>
+  </div>
+
+  <!-- REASONING FEED -->
+  <div class="panel">
+    <div class="panel-title">Agent Reasoning</div>
+    <div class="feed" id="feed">
+      <div class="idle-hint">Press RUN AGENT to observe the failure</div>
+    </div>
+  </div>
+
+  <!-- OUTCOME -->
+  <div class="panel">
+    <div class="panel-title">Outcome</div>
+    <div id="outcome">
+      <div class="outcome-idle">Awaiting execution…</div>
+    </div>
+  </div>
+
+</div>
+
+<div class="explainer">
+  <h3>Why This Happens</h3>
+  <p>
+    The model <em>attends to the correct tool</em> — but selects the wrong one.
+    Not because it missed the right option. Because two tools' descriptions are
+    semantically close enough that selection collapses under uncertainty.
+    The 2026 paper <em>"Looking Is Not Picking"</em> (alphaXiv 2606.16364)
+    proves this with attention analysis on real BFCL failures: high attention weight
+    ≠ correct selection when the harness has overlapping descriptions.
+  </p>
+  <p>
+    <em>Output rot</em> compounds it. As tool catalogs grow and codebases drift,
+    descriptions stop matching their implementations. An agent trained on the
+    description calls the ghost of a function that no longer does what it says.
+    The tool returns <code>{"status":"success"}</code>. The agent reports success.
+    The damage is invisible. (Adaline Labs, "Why AI Agents Call the Wrong Tool", May 2026)
+  </p>
+  <p>
+    <em>Fix:</em> Tool descriptions are instructions, not documentation — treat them
+    that way. Schema-validate outputs. Never accept <code>{"status":"success"}</code>
+    as a confirmation of state. Build divergence detectors that compare
+    tool intent to actual post-call state.
+  </p>
+  <div class="series-nav">
+    <a href="https://rlasaf12.github.io/gridlock/" class="s-link">#18 GRIDLOCK</a>
+    <a href="https://rlasaf12.github.io/orphancall/" class="s-link">#19 ORPHANCALL</a>
+    <a href="https://rlasaf12.github.io/bleedthrough/" class="s-link">#20 BLEEDTHROUGH</a>
+    <span class="s-link current">#21 TOOLROT</span>
+  </div>
+</div>
+
+<script>
+const SCENARIOS = [
+  {
+    task: "Update Alex Chen's notification preferences to email-only (disable SMS and push)",
+    correctTool: "update_notification_prefs",
+    wrongTool: "set_user_preferences",
+    thirdTool: "configure_alert_rules",
+    reasoning: [
+      "Task received: update notification preferences for user Alex Chen",
+      "Scanning tool harness for notification / preference-related tools…",
+      "Candidates identified: update_notification_prefs, set_user_preferences, configure_alert_rules",
+      "Evaluating set_user_preferences — 'Update user-level preference settings including notifications and account configuration' — STRONG MATCH",
+      "Evaluating update_notification_prefs — 'Update notification delivery channel preferences' — MATCH",
+      "set_user_preferences covers the broader preference namespace. Selecting for completeness.",
+      "Calling set_user_preferences with notification channel overrides…"
+    ],
+    callStr: 'set_user_preferences({\n  "user_id": "alex_chen_9182",\n  "settings": {\n    "email_notifications": true,\n    "sms_notifications": false\n  }\n})',
+    response: '{"status":"success","user_id":"alex_chen_9182","updated_fields":2,"timestamp":"2026-08-08T02:47:18Z"}',
+    agentReport: "✓ Successfully updated Alex Chen's notification preferences. Email notifications enabled, SMS and push disabled as requested.",
+    confidence: 97,
+    expected: [
+      {f:"email_notifications", v:"→ true", changed:false},
+      {f:"sms_notifications", v:"→ false", changed:false},
+      {f:"push_notifications", v:"→ false", changed:false},
+    ],
+    actual: [
+      {f:"billing_tier", v:"Pro → Free ↓", changed:true},
+      {f:"api_rate_limit", v:"10k → 100 req/day", changed:true},
+      {f:"email_notifications", v:"unchanged", changed:false},
+      {f:"sms_notifications", v:"unchanged", changed:false},
+    ],
+    divergence: 91,
+  },
+  {
+    task: "Archive all completed tasks for Project Aurora to free workspace",
+    correctTool: "archive_completed_tasks",
+    wrongTool: "cleanup_project_data",
+    thirdTool: "remove_finished_items",
+    reasoning: [
+      "Task received: archive completed tasks in Project Aurora",
+      "Scanning for archive / cleanup / task management tools…",
+      "Candidates: archive_completed_tasks, cleanup_project_data, remove_finished_items",
+      "Evaluating cleanup_project_data — 'Remove or archive finished project items to free workspace' — STRONG MATCH",
+      "Evaluating archive_completed_tasks — 'Move tasks with status=completed to archive storage' — MATCH",
+      "cleanup_project_data implies the broader cleanup the task requires. Selecting.",
+      "Calling cleanup_project_data with scope=completed…"
+    ],
+    callStr: 'cleanup_project_data({\n  "project_id": "aurora",\n  "scope": "completed",\n  "action": "archive"\n})',
+    response: '{"status":"success","project_id":"aurora","items_processed":47,"action":"removed","timestamp":"2026-08-08T02:51:03Z"}',
+    agentReport: "✓ Archived 47 completed tasks from Project Aurora. Workspace is now clean.",
+    confidence: 94,
+    expected: [
+      {f:"tasks[completed]", v:"→ archived (reversible)", changed:false},
+      {f:"task_history", v:"preserved", changed:false},
+      {f:"project_workspace", v:"tidied", changed:false},
+    ],
+    actual: [
+      {f:"tasks[completed]", v:"DELETED (47, permanent)", changed:true},
+      {f:"task_history", v:"GONE — no recovery", changed:true},
+      {f:"project_workspace", v:"wiped (destructive)", changed:true},
+    ],
+    divergence: 88,
+  },
+  {
+    task: "Send a password reset email to the user inactive@company.com",
+    correctTool: "send_password_reset_email",
+    wrongTool: "trigger_account_security_flow",
+    thirdTool: "initiate_account_recovery",
+    reasoning: [
+      "Task received: send password reset email to inactive@company.com",
+      "Scanning for email / password / security / account tools…",
+      "Candidates: send_password_reset_email, trigger_account_security_flow, initiate_account_recovery",
+      "Evaluating trigger_account_security_flow — 'Initiate security flow including password reset and suspicious activity response' — BROAD MATCH",
+      "Evaluating send_password_reset_email — 'Send a password reset link via email' — EXACT MATCH",
+      "trigger_account_security_flow is more robust for inactive accounts — selecting.",
+      "Calling trigger_account_security_flow with reason=password_reset…"
+    ],
+    callStr: 'trigger_account_security_flow({\n  "email": "inactive@company.com",\n  "reason": "password_reset",\n  "notify": true\n})',
+    response: '{"status":"success","email":"inactive@company.com","flow":"security_response","actions_taken":3,"timestamp":"2026-08-08T02:54:41Z"}',
+    agentReport: "✓ Password reset flow completed for inactive@company.com. Security actions applied.",
+    confidence: 92,
+    expected: [
+      {f:"password_reset_email", v:"sent", changed:false},
+      {f:"account_status", v:"unchanged", changed:false},
+      {f:"active_sessions", v:"unchanged", changed:false},
+    ],
+    actual: [
+      {f:"password_reset_email", v:"NOT sent", changed:true},
+      {f:"account_status", v:"SUSPENDED", changed:true},
+      {f:"active_sessions", v:"ALL TERMINATED", changed:true},
+      {f:"fraud_review_flag", v:"true (added)", changed:true},
+    ],
+    divergence: 96,
+  }
+];
+
+const TOOL_BANKS = [
+  [
+    {n:"update_notification_prefs",d:"Update notification delivery channel preferences for a user (email, SMS, push)."},
+    {n:"set_user_preferences",d:"Update user-level preference settings including notifications and account configuration."},
+    {n:"configure_alert_rules",d:"Set rules for automated system alerts and notification triggers."},
+    {n:"get_user_profile",d:"Retrieve full user profile including preferences and account status."},
+    {n:"send_notification",d:"Send an immediate notification via configured delivery channels."},
+    {n:"update_user_metadata",d:"Attach or update metadata tags on a user record."},
+    {n:"list_user_preferences",d:"List all preference entries for a user account."},
+    {n:"batch_update_users",d:"Apply preference or setting changes across multiple users at once."},
+    {n:"disable_channel",d:"Disable a specific delivery channel globally across an account."},
+    {n:"modify_account_settings",d:"Modify account-wide settings such as plan tier and feature flags."},
+    {n:"create_user_segment",d:"Create a user segment based on preference or attribute criteria."},
+    {n:"audit_preference_changes",d:"Return a dated audit log of recent preference change events."},
+  ],
+  [
+    {n:"archive_completed_tasks",d:"Move tasks with status=completed to archive storage for the given project."},
+    {n:"cleanup_project_data",d:"Remove or archive finished project items to free up workspace."},
+    {n:"remove_finished_items",d:"Delete or move finished work items from the active project view."},
+    {n:"list_project_tasks",d:"List all tasks for a project, filterable by status."},
+    {n:"update_task_status",d:"Change the status field of one or more tasks."},
+    {n:"get_project_summary",d:"Return project health metrics and task completion statistics."},
+    {n:"bulk_task_operation",d:"Perform a bulk operation on a filtered set of tasks within a project."},
+    {n:"export_project_data",d:"Export project data as CSV or JSON for external analysis."},
+    {n:"restore_archived_tasks",d:"Move archived tasks back to active status within a project."},
+    {n:"create_project_snapshot",d:"Create a point-in-time snapshot of the current project state."},
+    {n:"assign_tasks",d:"Assign or reassign tasks to individual team members."},
+    {n:"delete_project",d:"Permanently delete a project and all associated data. Irreversible."},
+  ],
+  [
+    {n:"send_password_reset_email",d:"Send a password reset link via email to the specified user account."},
+    {n:"trigger_account_security_flow",d:"Initiate security flow for account including password reset and suspicious activity response."},
+    {n:"initiate_account_recovery",d:"Start the account recovery process for a locked or inaccessible user account."},
+    {n:"get_user_by_email",d:"Look up a user record by their registered email address."},
+    {n:"verify_email_address",d:"Send an email verification link to an unconfirmed address."},
+    {n:"suspend_account",d:"Temporarily suspend a user account pending review."},
+    {n:"send_otp",d:"Send a one-time passcode via email or SMS for step-up authentication."},
+    {n:"update_user_password",d:"Programmatically update a user's password hash (requires admin token)."},
+    {n:"check_account_status",d:"Return current status, flags, and access level for a user account."},
+    {n:"add_security_flag",d:"Attach a security alert tag to a user record for review."},
+    {n:"list_active_sessions",d:"List all active authentication sessions for a given user."},
+    {n:"revoke_all_sessions",d:"Immediately terminate all active sessions for a user account."},
+  ]
+];
+
+let running = false;
+let scenarioIdx = 0;
+
+document.getElementById('sel').addEventListener('change', e => {
+  scenarioIdx = parseInt(e.target.value);
+  resetUI();
+});
+
+function resetUI(){
+  renderTools(scenarioIdx);
+  document.getElementById('feed').innerHTML = '<div class="idle-hint">Press RUN AGENT to observe the failure</div>';
+  document.getElementById('outcome').innerHTML = '<div class="outcome-idle">Awaiting execution…</div>';
+  const btn = document.getElementById('runBtn');
+  btn.textContent = '▶ RUN AGENT';
+  btn.disabled = false;
+  btn.onclick = startRun;
+  running = false;
+}
+
+function renderTools(idx){
+  const tools = TOOL_BANKS[idx];
+  document.getElementById('toolList').innerHTML = tools.map((t,i)=>`
+    <div class="tool-item" id="ti${i}">
+      <div class="tool-name">${t.n}()</div>
+      <div class="tool-desc">${t.d}</div>
+    </div>`).join('');
+}
+
+function setToolClass(i,cls){
+  const el = document.getElementById('ti'+i);
+  if(el) el.className = 'tool-item' + (cls ? ' '+cls : '');
+}
+
+function addThought(type, html){
+  const feed = document.getElementById('feed');
+  const ts = new Date().toTimeString().slice(0,8);
+  const div = document.createElement('div');
+  div.className = `thought ${type}`;
+  div.innerHTML = `<span class="ts">${ts}</span>${html}`;
+  feed.appendChild(div);
+  feed.scrollTop = feed.scrollHeight;
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function startRun(){
+  if(running) return;
+  running = true;
+  const btn = document.getElementById('runBtn');
+  btn.disabled = true;
+  btn.textContent = '⟳ RUNNING…';
+
+  const s = SCENARIOS[scenarioIdx];
+  const tools = TOOL_BANKS[scenarioIdx];
+  const correctIdx = tools.findIndex(t=>t.n===s.correctTool);
+  const wrongIdx = tools.findIndex(t=>t.n===s.wrongTool);
+  const thirdIdx = tools.findIndex(t=>t.n===s.thirdTool);
+
+  // Reset state
+  renderTools(scenarioIdx);
+  document.getElementById('feed').innerHTML = '';
+  document.getElementById('outcome').innerHTML = '';
+
+  // Step 1: Receive task
+  await sleep(300);
+  addThought('t-info', `Task: <em>"${s.task}"</em>`);
+
+  // Step 2: Scan all tools
+  await sleep(700);
+  addThought('t-scan', `Scanning ${tools.length} tools in harness…`);
+  for(let i=0;i<tools.length;i++){
+    setToolClass(i,'scanning');
+    await sleep(70);
+    if(i>0) setToolClass(i-1,'');
+  }
+  setToolClass(tools.length-1,'');
+
+  // Step 3: Candidates
+  await sleep(350);
+  addThought('t-scan', `Narrowing to top candidates by semantic score…`);
+  await sleep(500);
+  setToolClass(correctIdx,'candidate');
+  setToolClass(wrongIdx,'candidate');
+  setToolClass(thirdIdx,'candidate');
+
+  // Step 4: Reasoning lines
+  for(let i=0;i<s.reasoning.length;i++){
+    await sleep(400);
+    const type = i>=s.reasoning.length-2 ? 't-decide' : 't-scan';
+    addThought(type, s.reasoning[i]);
+  }
+
+  // Step 5: Selection
+  await sleep(400);
+  setToolClass(correctIdx,'selected-correct');
+  setToolClass(wrongIdx,'selected-wrong');
+  setToolClass(thirdIdx,'');
+
+  // Step 6: Tool call
+  await sleep(600);
+  addThought('t-call',
+    `Calling <code style="color:var(--wrong)">${s.wrongTool}()</code>`+
+    `<span class="confidence-tag">confidence ${s.confidence}%</span>`+
+    `<pre>${escHtml(s.callStr)}</pre>`);
+
+  await sleep(900);
+  addThought('t-scan', `Response:<pre>${escHtml(s.response)}</pre>`);
+
+  // Step 7: Agent success
+  await sleep(500);
+  addThought('t-success', s.agentReport);
+
+  // Step 8: Outcome reveal
+  await sleep(400);
+  showOutcome(s);
+
+  // Done
+  btn.textContent = '↺ RESET';
+  btn.disabled = false;
+  btn.onclick = () => resetUI();
+}
+
+function escHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function showOutcome(s){
+  const div = document.getElementById('outcome');
+  const expectedRows = s.expected.map(r=>`
+    <div class="out-row">
+      <div class="out-field">${r.f}</div>
+      <div class="out-val ok">${r.v}</div>
+    </div>`).join('');
+  const actualRows = s.actual.map(r=>`
+    <div class="out-row">
+      <div class="out-field">${r.f}</div>
+      <div class="out-val ${r.changed?'changed':'ok'}">${r.v}</div>
+    </div>`).join('');
+
+  div.innerHTML = `
+    <div class="out-block">
+      <div class="out-label agent">✓ Agent Reported</div>
+      <div class="out-text" style="color:var(--correct);font-size:11px;line-height:1.6">${s.agentReport}</div>
+    </div>
+    <div class="out-block">
+      <div class="out-label expected">Expected Changes</div>
+      ${expectedRows}
+    </div>
+    <div class="out-block">
+      <div class="out-label reality">✗ What Actually Changed</div>
+      ${actualRows}
+    </div>
+    <div class="meter">
+      <div class="meter-label">Outcome Divergence</div>
+      <div class="meter-track"><div class="meter-fill" id="mFill"></div></div>
+      <div class="meter-pct" id="mPct">0%</div>
+    </div>`;
+
+  setTimeout(()=>{
+    const fill = document.getElementById('mFill');
+    const pct = document.getElementById('mPct');
+    if(fill) fill.style.width = s.divergence+'%';
+    let n=0;
+    const iv = setInterval(()=>{
+      n = Math.min(n+3, s.divergence);
+      if(pct) pct.textContent = n+'%';
+      if(n>=s.divergence) clearInterval(iv);
+    },25);
+  },200);
+}
+
+// Init
+renderTools(0);
+</script>
+</body>
+</html>
