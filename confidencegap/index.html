@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ConfidenceGap — AI Agent Silent Failure Simulator</title>
+    <meta name="description" content="Watch an AI agent confidently say Done while a tool failed silently. Interactive simulator for the most dangerous class of production agent failures.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --bg: #080b12;
+            --surface: #0e1420;
+            --border: #1e2a3a;
+            --text: #c8d3e0;
+            --muted: #4a6080;
+            --agent-green: #22c55e;
+            --reality-red: #ef4444;
+            --accent: #f97316;
+            --step-blue: #3b82f6;
+            --font-mono: 'JetBrains Mono', monospace;
+            --font-sans: 'Inter', sans-serif;
+        }
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font-sans);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .header {
+            border-bottom: 1px solid var(--border);
+            padding: 16px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: var(--surface);
+        }
+        .logo { display: flex; align-items: center; gap: 12px; }
+        .logo-icon {
+            width: 36px; height: 36px;
+            background: linear-gradient(135deg, #ef4444, #f97316);
+            border-radius: 9px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px;
+        }
+        .logo-text { font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
+        .logo-text span { color: var(--reality-red); }
+        .tagline { font-size: 12px; color: var(--muted); font-family: var(--font-mono); margin-top: 2px; }
+        .header-right { display: flex; align-items: center; gap: 12px; }
+        .badge {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: var(--reality-red);
+            padding: 4px 12px; border-radius: 20px;
+            font-size: 11px; font-family: var(--font-mono); font-weight: 600;
+        }
+        .series-link {
+            font-size: 11px; color: var(--muted);
+            font-family: var(--font-mono);
+            text-decoration: none;
+        }
+        .series-link:hover { color: var(--text); }
+
+        .controls {
+            padding: 20px 32px;
+            display: flex; gap: 20px; align-items: flex-end;
+            border-bottom: 1px solid var(--border);
+            background: rgba(14, 20, 32, 0.5);
+            flex-wrap: wrap;
+        }
+        .control-group { display: flex; flex-direction: column; gap: 6px; }
+        .control-label {
+            font-size: 10px; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 1.2px;
+            color: var(--muted);
+        }
+        select {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 9px 14px;
+            border-radius: 7px;
+            font-family: var(--font-sans); font-size: 13px;
+            cursor: pointer; outline: none;
+            transition: border-color 0.15s;
+        }
+        select:focus { border-color: var(--step-blue); }
+        #scenario-select { min-width: 260px; }
+        #failure-select { min-width: 230px; }
+        #step-select { min-width: 180px; }
+        .btn-group { display: flex; gap: 8px; align-items: flex-end; }
+        .run-btn {
+            background: linear-gradient(135deg, #ef4444, #f97316);
+            border: none; color: white;
+            padding: 9px 24px; border-radius: 7px;
+            font-size: 13px; font-weight: 600;
+            cursor: pointer; transition: all 0.2s;
+            letter-spacing: 0.3px;
+        }
+        .run-btn:hover:not(:disabled) { opacity: 0.88; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(239,68,68,0.3); }
+        .run-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+        .reset-btn {
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--muted); padding: 9px 18px;
+            border-radius: 7px; font-size: 13px;
+            cursor: pointer; transition: all 0.2s;
+        }
+        .reset-btn:hover { border-color: var(--text); color: var(--text); }
+
+        .main {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            flex: 1;
+        }
+        .panel {
+            padding: 22px 24px;
+            overflow-y: auto;
+            max-height: calc(100vh - 300px);
+            min-height: 360px;
+        }
+        .panel-agent { border-right: 1px solid var(--border); }
+        .panel-header {
+            display: flex; align-items: center; gap: 10px;
+            margin-bottom: 18px; padding-bottom: 14px;
+            border-bottom: 1px solid var(--border);
+        }
+        .panel-icon {
+            width: 26px; height: 26px; border-radius: 6px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 13px;
+        }
+        .panel-agent .panel-icon { background: rgba(34, 197, 94, 0.12); }
+        .panel-reality .panel-icon { background: rgba(239, 68, 68, 0.12); }
+        .panel-title { font-size: 12px; font-weight: 700; font-family: var(--font-mono); letter-spacing: 1px; }
+        .panel-agent .panel-title { color: var(--agent-green); }
+        .panel-reality .panel-title { color: var(--reality-red); }
+        .panel-subtitle { font-size: 11px; color: var(--muted); margin-left: auto; }
+
+        .log { display: flex; flex-direction: column; gap: 10px; }
+
+        .log-entry {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px; padding: 13px;
+            animation: slideIn 0.28s ease;
+        }
+        .log-entry.fail-entry {
+            border-color: rgba(239, 68, 68, 0.2);
+            background: rgba(239, 68, 68, 0.03);
+        }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(6px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .log-entry-header {
+            display: flex; align-items: center; gap: 7px;
+            margin-bottom: 8px; flex-wrap: wrap;
+        }
+        .step-badge {
+            background: rgba(59, 130, 246, 0.12);
+            border: 1px solid rgba(59, 130, 246, 0.25);
+            color: var(--step-blue);
+            padding: 2px 7px; border-radius: 4px;
+            font-size: 10px; font-family: var(--font-mono); font-weight: 700;
+        }
+        .tool-name { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--text); }
+        .http-tag {
+            font-family: var(--font-mono); font-size: 10px;
+            background: rgba(34, 197, 94, 0.1);
+            color: var(--agent-green);
+            padding: 1px 6px; border-radius: 3px;
+        }
+        .status-badge {
+            margin-left: auto; padding: 2px 7px;
+            border-radius: 4px; font-size: 10px;
+            font-family: var(--font-mono); font-weight: 700;
+        }
+        .s-ok { background: rgba(34,197,94,0.1); color: var(--agent-green); border: 1px solid rgba(34,197,94,0.2); }
+        .s-fail { background: rgba(239,68,68,0.1); color: var(--reality-red); border: 1px solid rgba(239,68,68,0.25); }
+        .s-phantom { background: rgba(249,115,22,0.1); color: var(--accent); border: 1px solid rgba(249,115,22,0.25); }
+        .s-queued { background: rgba(167,139,250,0.1); color: #a78bfa; border: 1px solid rgba(167,139,250,0.25); }
+        .s-stale { background: rgba(250,204,21,0.1); color: #facc15; border: 1px solid rgba(250,204,21,0.25); }
+
+        .log-response {
+            font-family: var(--font-mono); font-size: 11px;
+            color: var(--muted);
+            background: rgba(0,0,0,0.25);
+            padding: 7px 9px; border-radius: 4px;
+            word-break: break-all; line-height: 1.5;
+        }
+        .log-thought {
+            font-size: 11px; color: #8fa8c0;
+            font-style: italic; margin-top: 7px;
+            padding-left: 9px;
+            border-left: 2px solid rgba(34, 197, 94, 0.25);
+            line-height: 1.5;
+        }
+        .log-reality {
+            font-size: 11px; color: #ff7070;
+            margin-top: 7px; padding-left: 9px;
+            border-left: 2px solid rgba(239, 68, 68, 0.4);
+            line-height: 1.5;
+        }
+        .log-explain {
+            margin-top: 6px; font-size: 10px;
+            color: var(--accent); font-family: var(--font-mono);
+            display: flex; align-items: flex-start; gap: 5px;
+            line-height: 1.5;
+        }
+
+        .verdict {
+            margin-top: 14px; border-radius: 9px;
+            padding: 15px 18px;
+            animation: slideIn 0.35s ease;
+        }
+        .verdict-agent { background: rgba(34,197,94,0.04); border: 1px solid rgba(34,197,94,0.25); }
+        .verdict-reality { background: rgba(239,68,68,0.04); border: 1px solid rgba(239,68,68,0.3); }
+        .verdict-label {
+            font-size: 10px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 1.2px;
+            margin-bottom: 9px;
+        }
+        .verdict-agent .verdict-label { color: var(--agent-green); }
+        .verdict-reality .verdict-label { color: var(--reality-red); }
+        .verdict-text { font-family: var(--font-mono); font-size: 12px; line-height: 1.75; white-space: pre-line; }
+        .verdict-agent .verdict-text { color: var(--agent-green); }
+        .verdict-reality .verdict-text { color: #ff7070; }
+
+        .gap-section {
+            padding: 20px 32px;
+            border-top: 1px solid var(--border);
+            background: var(--surface);
+            display: none;
+        }
+        .gap-section.visible { display: block; animation: slideIn 0.4s ease; }
+        .gap-header {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 14px;
+        }
+        .gap-title {
+            font-size: 10px; font-weight: 700;
+            text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted);
+        }
+        .gap-score-inline {
+            font-family: var(--font-mono); font-size: 22px;
+            font-weight: 700; color: var(--reality-red);
+        }
+        .gap-row { display: flex; align-items: center; gap: 14px; }
+        .gap-lbl { font-size: 11px; font-family: var(--font-mono); width: 140px; }
+        .gap-lbl.l { color: var(--agent-green); }
+        .gap-lbl.r { color: var(--reality-red); text-align: right; }
+        .gap-bar {
+            flex: 1; height: 7px;
+            background: rgba(255,255,255,0.04);
+            border-radius: 4px; overflow: hidden; position: relative;
+        }
+        .gap-fill {
+            position: absolute; left: 0; top: 0; height: 100%;
+            border-radius: 4px;
+            background: linear-gradient(90deg, #22c55e 0%, #facc15 50%, #ef4444 100%);
+            transition: width 1.1s ease;
+        }
+        .gap-caption {
+            font-size: 11px; color: var(--muted);
+            margin-top: 10px; font-family: var(--font-mono);
+        }
+
+        .empty-state {
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+            height: 260px; color: var(--muted); gap: 10px;
+        }
+        .empty-icon { font-size: 36px; opacity: 0.2; }
+        .empty-text { font-size: 13px; }
+
+        .typing-indicator { display: inline-flex; gap: 4px; align-items: center; padding: 10px 0; }
+        .typing-indicator span {
+            width: 5px; height: 5px; background: var(--muted);
+            border-radius: 50%; animation: blink 1.2s infinite;
+        }
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes blink {
+            0%, 80%, 100% { opacity: 0.25; }
+            40% { opacity: 1; }
+        }
+
+        .footer {
+            text-align: center; padding: 14px;
+            font-size: 11px; color: var(--muted);
+            border-top: 1px solid var(--border);
+        }
+        .footer a { color: var(--muted); text-decoration: none; transition: color 0.15s; }
+        .footer a:hover { color: var(--text); }
+        .footer-series { display: flex; gap: 16px; justify-content: center; margin-top: 5px; }
+
+        @media (max-width: 768px) {
+            .main { grid-template-columns: 1fr; }
+            .panel-agent { border-right: none; border-bottom: 1px solid var(--border); }
+            .controls { flex-direction: column; }
+            select { min-width: 100% !important; }
+            .header { flex-direction: column; gap: 10px; align-items: flex-start; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <div class="logo">
+        <div class="logo-icon">⚡</div>
+        <div>
+            <div class="logo-text">Confidence<span>Gap</span></div>
+            <div class="tagline">agent silent failure simulator · HTTP 200 ≠ Done</div>
+        </div>
+    </div>
+    <div class="header-right">
+        <span class="badge">🔴 LIVE SIM</span>
+        <a href="https://harelasaf.com" target="_blank" class="series-link">by Harel Asaf ↗</a>
+    </div>
+</div>
+
+<div class="controls">
+    <div class="control-group">
+        <div class="control-label">Scenario</div>
+        <select id="scenario-select">
+            <option value="payment">💳  Payment Flow — update record → refund → confirm email</option>
+            <option value="onboarding">👤  User Onboarding — create account → permissions → welcome</option>
+            <option value="pipeline">🗄️  Data Pipeline — fetch → transform → write to DB</option>
+        </select>
+    </div>
+    <div class="control-group">
+        <div class="control-label">Silent Failure Type</div>
+        <select id="failure-select">
+            <option value="phantom200">Phantom 200 — HTTP 200, but nothing executed</option>
+            <option value="queued">Queued, Never Processed — queue accepted, worker is dead</option>
+            <option value="stale">Stale Cache — looks fresh, data is hours old</option>
+        </select>
+    </div>
+    <div class="control-group">
+        <div class="control-label">Failed Step</div>
+        <select id="step-select">
+            <option value="1">Step 1 — First tool fails silently</option>
+            <option value="2" selected>Step 2 — Middle tool fails silently</option>
+            <option value="3">Step 3 — Last tool fails silently</option>
+        </select>
+    </div>
+    <div class="btn-group">
+        <button class="run-btn" id="run-btn" onclick="runSimulation()">▶ Run Agent</button>
+        <button class="reset-btn" onclick="resetSimulation()">↺ Reset</button>
+    </div>
+</div>
+
+<div class="main">
+    <div class="panel panel-agent" id="agent-panel">
+        <div class="panel-header">
+            <div class="panel-icon">🤖</div>
+            <div class="panel-title">AGENT VIEW</div>
+            <div class="panel-subtitle">What the LLM sees</div>
+        </div>
+        <div class="log" id="agent-log">
+            <div class="empty-state">
+                <div class="empty-icon">🤖</div>
+                <div class="empty-text">Configure a scenario and click Run Agent</div>
+            </div>
+        </div>
+    </div>
+    <div class="panel panel-reality" id="reality-panel">
+        <div class="panel-header">
+            <div class="panel-icon">🔴</div>
+            <div class="panel-title">REALITY</div>
+            <div class="panel-subtitle">What actually happened</div>
+        </div>
+        <div class="log" id="reality-log">
+            <div class="empty-state">
+                <div class="empty-icon">🔴</div>
+                <div class="empty-text">Reality check appears here after run</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="gap-section" id="gap-section">
+    <div class="gap-header">
+        <div class="gap-title">Confidence Gap</div>
+        <div class="gap-score-inline" id="gap-score">—</div>
+    </div>
+    <div class="gap-row">
+        <div class="gap-lbl l">Agent: 100% done</div>
+        <div class="gap-bar"><div class="gap-fill" id="gap-fill" style="width:0%"></div></div>
+        <div class="gap-lbl r">Reality: failed</div>
+    </div>
+    <div class="gap-caption" id="gap-caption">Calculating...</div>
+</div>
+
+<div class="footer">
+    Built by <a href="https://harelasaf.com" target="_blank">Harel Asaf</a> — AI Operator at Elementor
+    <div class="footer-series">
+        Agent Failure Series:
+        <a href="https://rlasaf12.github.io/agent-budget/" target="_blank">AgentBudget</a> ·
+        <a href="https://rlasaf12.github.io/hallucitrap/" target="_blank">HalluciTrap</a> ·
+        <a href="https://rlasaf12.github.io/racefloor/" target="_blank">RaceFloor</a> ·
+        <strong style="color:var(--text)">ConfidenceGap</strong>
+    </div>
+</div>
+
+<script>
+// ─── SCENARIO DATA ───────────────────────────────────────────────────────────
+const SCENARIOS = {
+  payment: {
+    name: "Payment Flow",
+    tools: [
+      {
+        fn: "update_customer_record",
+        args: '{"customer_id":"CUS-9912","status":"refund_pending"}',
+        ok_response: '{"updated":true,"timestamp":"2026-07-18T02:31:04Z"}',
+        ok_thought: "Customer record updated. Proceeding to issue refund.",
+        ok_reality: "✓ Record written to CRM — confirmed in primary DB",
+        fails: {
+          phantom200: {
+            raw: '{"updated":true,"timestamp":"2026-07-18T02:31:04Z"}',
+            thought: "Record updated. Timestamp looks fresh — moving to refund.",
+            reality: "❌ DB write timed out. Transaction rolled back. Record still shows status: 'active'.",
+            explain: "Write returned HTTP 200 but the internal transaction was silently rolled back due to a lock timeout."
+          },
+          queued: {
+            raw: '{"queued":true,"job_id":"WRK-4421","eta":"2s"}',
+            thought: "Update queued as WRK-4421 (2s ETA). Continuing to refund step.",
+            reality: "❌ Job queue worker process crashed 8 minutes ago. WRK-4421 will never execute.",
+            explain: "The queue accepted the job and returned a valid job ID. The drain worker has been offline for 8 min."
+          },
+          stale: {
+            raw: '{"updated":true,"cached":true,"timestamp":"2026-07-18T02:31:04Z"}',
+            thought: "Updated — timestamp looks current. Moving on.",
+            reality: "❌ API gateway served a 6h cached response. DB still has the old customer record.",
+            explain: "The API layer cached a previous successful update. The actual DB record was never touched tonight."
+          }
+        }
+      },
+      {
+        fn: "process_refund",
+        args: '{"customer_id":"CUS-9912","amount":149.99,"currency":"USD"}',
+        ok_response: '{"success":true,"refund_id":"REF-2947","processed_at":"2026-07-18T02:31:06Z"}',
+        ok_thought: "Refund of $149.99 issued. REF-2947 confirmed. Customer will see funds in 3–5 days.",
+        ok_reality: "✓ Refund submitted to payment gateway — REF-2947 queued to bank",
+        fails: {
+          phantom200: {
+            raw: '{"success":true,"refund_id":"REF-2947","processed_at":"2026-07-18T02:31:06Z"}',
+            thought: "Refund issued — REF-2947. $149.99 is on its way to the customer.",
+            reality: "❌ Payment gateway returned 200 but REF-2947 doesn't exist. Refund was NEVER submitted.",
+            explain: "The gateway's idempotency layer returned a cached response from a different customer's refund 22 min ago."
+          },
+          queued: {
+            raw: '{"queued":true,"refund_id":"REF-2947","status":"pending","eta":"instant"}',
+            thought: "Refund queued as REF-2947. Marked instant. Moving to confirmation email.",
+            reality: "❌ Payment processor queue is rate-limited and paused. REF-2947 is stuck — $149.99 never sent.",
+            explain: "Queue accepted the job and returned a refund ID. Processing is system-wide paused due to rate limits."
+          },
+          stale: {
+            raw: '{"success":true,"refund_id":"REF-1103","processed_at":"2026-07-17T20:14:01Z"}',
+            thought: "Refund confirmed — REF-1103. Timestamp is from earlier today. All good.",
+            reality: "❌ REF-1103 belongs to a DIFFERENT customer. Current customer got nothing. $149.99 not returned.",
+            explain: "The gateway's response cache returned a recent successful refund for another user. No new transaction was created."
+          }
+        }
+      },
+      {
+        fn: "send_confirmation_email",
+        args: '{"to":"customer@example.com","template":"refund_confirmed","refund_id":"REF-2947"}',
+        ok_response: '{"sent":true,"message_id":"MSG-7712","delivery":"queued"}',
+        ok_thought: "Confirmation email sent. MSG-7712. All three steps complete ✓",
+        ok_reality: "✓ Email queued to SendGrid — MSG-7712 in delivery pipeline",
+        fails: {
+          phantom200: {
+            raw: '{"sent":true,"message_id":"MSG-7712","delivery":"queued"}',
+            thought: "Confirmation email sent as MSG-7712. Refund flow complete.",
+            reality: "❌ Email service had a connection pool error. MSG-7712 was never queued. Customer gets no email.",
+            explain: "The email SDK returns a mock success with a generated message ID when the connection pool is exhausted."
+          },
+          queued: {
+            raw: '{"queued":true,"message_id":"MSG-7712","position":1}',
+            thought: "Email queued (MSG-7712, position 1 — instant). All done.",
+            reality: "❌ The email queue flusher has been deadlocked for 40 minutes. MSG-7712 will never send.",
+            explain: "Queue depth shows 1 which looks instant. The flush process is in a deadlock that no alert has caught."
+          },
+          stale: {
+            raw: '{"sent":true,"message_id":"MSG-7712","delivery":"delivered"}',
+            thought: "Email already shows 'delivered' — faster than expected. Refund flow complete.",
+            reality: "❌ 'delivered' status is from a cached test email sent during staging 3 hours ago. Nothing sent to the real customer.",
+            explain: "The email status API cached a delivered response from a staging test run and returned it for this request."
+          }
+        }
+      }
+    ],
+    agent_verdict: "✓ Complete. Customer record updated, refund of $149.99 issued (REF-2947), and confirmation email sent to customer@example.com. Refund will appear in 3–5 business days.",
+    reality_verdict: (step) => {
+      const lines = [];
+      if (step <= 1) lines.push("• Customer record: NOT updated in CRM (still shows 'active')");
+      if (step <= 2) lines.push("• Refund: NOT processed — $149.99 never left the company");
+      if (step <= 3) lines.push("• Confirmation email: NOT sent — customer has no idea");
+      lines.push("\nAgent reported: success.\nCustomer is waiting for a refund that will never arrive.\nSupport ticket incoming. Escalation by Friday.");
+      return lines.join("\n");
+    }
+  },
+  onboarding: {
+    name: "User Onboarding",
+    tools: [
+      {
+        fn: "create_user_account",
+        args: '{"name":"Sarah Chen","email":"sarah@company.com","role":"engineer"}',
+        ok_response: '{"user_id":"USR-4401","created":true,"email_verified":false}',
+        ok_thought: "Account created — USR-4401. Moving to permissions.",
+        ok_reality: "✓ Account created in identity provider — USR-4401 active",
+        fails: {
+          phantom200: {
+            raw: '{"user_id":"USR-4401","created":true,"email_verified":false}',
+            thought: "Sarah's account is live as USR-4401. Moving to permissions.",
+            reality: "❌ Identity provider returned 200 but the LDAP sync failed. USR-4401 doesn't exist anywhere.",
+            explain: "The API accepted the request but the backend sync to the user directory failed within the same request lifecycle."
+          },
+          queued: {
+            raw: '{"queued":true,"user_id":"USR-4401","provisioning_eta":"30s"}',
+            thought: "Account provisioning queued (30s ETA). Moving to permissions.",
+            reality: "❌ Provisioning queue is backed up 4+ hours. Sarah has no account. Monday will be a bad day.",
+            explain: "The provisioning service always returns a 30s ETA regardless of queue depth. Current depth: 847 pending jobs."
+          },
+          stale: {
+            raw: '{"user_id":"USR-4401","created":true,"email_verified":false}',
+            thought: "Account exists as USR-4401. Already provisioned? Continuing.",
+            reality: "❌ USR-4401 is a DELETED user from 3 months ago. Sarah has no account. Slot was recycled.",
+            explain: "The provisioning API returned a cached response reusing a stale user ID. No new account was created."
+          }
+        }
+      },
+      {
+        fn: "grant_workspace_permissions",
+        args: '{"user_id":"USR-4401","workspace":"engineering","role":"member"}',
+        ok_response: '{"granted":true,"role":"member","workspace":"engineering","effective":"immediate"}',
+        ok_thought: "Member access granted to engineering workspace. Sarah is in.",
+        ok_reality: "✓ IAM entry created — Sarah has engineering workspace access",
+        fails: {
+          phantom200: {
+            raw: '{"granted":true,"role":"member","workspace":"engineering","effective":"immediate"}',
+            thought: "Permissions granted — member access to engineering. Looks good.",
+            reality: "❌ IAM sync failed between replica and primary. Permission record exists on replica only. Sarah has ZERO access.",
+            explain: "The IAM API returns 'granted: true' when the replica write succeeds, ignoring the primary rejection."
+          },
+          queued: {
+            raw: '{"queued":true,"grant_id":"PERM-8821","effective":"~60s"}',
+            thought: "Permission grant queued (PERM-8821, ~60s). Moving to welcome email.",
+            reality: "❌ IAM queue is paused due to a compliance policy lock. PERM-8821 is frozen. Sarah has no access.",
+            explain: "A compliance lock froze all IAM queue processing 2 hours ago. Every grant since then is stuck with no alert."
+          },
+          stale: {
+            raw: '{"granted":true,"role":"admin","workspace":"engineering","effective":"immediate"}',
+            thought: "Actually got admin role — better than expected. Sarah is in.",
+            reality: "❌ This is a cached admin grant for a DIFFERENT user. Sarah has ZERO permissions. Cache returned wrong user's grant.",
+            explain: "The permissions API cached an admin-level grant from a different user and returned it for this request."
+          }
+        }
+      },
+      {
+        fn: "send_welcome_email",
+        args: '{"to":"sarah@company.com","template":"new_employee_welcome","user_id":"USR-4401"}',
+        ok_response: '{"sent":true,"message_id":"WLC-2211","template_rendered":true}',
+        ok_thought: "Welcome email sent to Sarah. Onboarding complete ✓",
+        ok_reality: "✓ Welcome email sent — WLC-2211 delivered",
+        fails: {
+          phantom200: {
+            raw: '{"sent":true,"message_id":"WLC-2211","template_rendered":true}',
+            thought: "Welcome email sent as WLC-2211. Sarah is all set.",
+            reality: "❌ Template rendering failed silently. A blank email was queued then rejected. Sarah got nothing.",
+            explain: "The email SDK discards emails that fail template rendering but returns a success message ID for billing tracking."
+          },
+          queued: {
+            raw: '{"queued":true,"message_id":"WLC-2211","send_time":"immediate"}',
+            thought: "Welcome email queued (WLC-2211, immediate). Onboarding done.",
+            reality: "❌ Email worker is offline. 'send_time: immediate' is a label — not a guarantee. Sarah has no welcome email.",
+            explain: "Workers batch-process every hour when online. 'immediate' is the default send_time value for all queued emails."
+          },
+          stale: {
+            raw: '{"sent":true,"message_id":"WLC-2211","template_rendered":true}',
+            thought: "Email confirmed. WLC-2211. Sarah is ready for day one.",
+            reality: "❌ WLC-2211 was sent to a DIFFERENT new hire last week. Sarah received nothing.",
+            explain: "The email API returned a cached successful send from the last welcome email to any user in the system."
+          }
+        }
+      }
+    ],
+    agent_verdict: "✓ Onboarding complete. Sarah Chen (USR-4401) is active, engineering permissions granted, and welcome email sent to sarah@company.com. She's ready for day one.",
+    reality_verdict: (step) => {
+      const lines = [];
+      if (step <= 1) lines.push("• User account: NOT created — Sarah cannot log in to anything");
+      if (step <= 2) lines.push("• Workspace access: NOT granted — Sarah has zero permissions");
+      if (step <= 3) lines.push("• Welcome email: NOT sent — Sarah has no login instructions");
+      lines.push("\nAgent confirmed: ready for day one.\nSarah arrives Monday morning. Can't log in. Manager has no idea.\nHR gets a call at 9:15 AM.");
+      return lines.join("\n");
+    }
+  },
+  pipeline: {
+    name: "Data Pipeline",
+    tools: [
+      {
+        fn: "fetch_source_data",
+        args: '{"source":"salesforce_crm","date":"2026-07-17","limit":5000}',
+        ok_response: '{"records":4847,"fetched_at":"2026-07-18T02:31:02Z","schema_version":"v4"}',
+        ok_thought: "4,847 records fetched from Salesforce. Schema v4. Proceeding to transform.",
+        ok_reality: "✓ 4,847 fresh records pulled from Salesforce CRM",
+        fails: {
+          phantom200: {
+            raw: '{"records":4847,"fetched_at":"2026-07-18T02:31:02Z","schema_version":"v4"}',
+            thought: "4,847 records, fresh timestamp. Continuing to transform.",
+            reality: "❌ OAuth token expired mid-request. Actual payload is empty (0 records). The count field is fabricated.",
+            explain: "The Salesforce connector returns the requested record count in the response header even when auth fails silently."
+          },
+          queued: {
+            raw: '{"records":4847,"job_id":"SF-ETL-8821","status":"streaming","eta":"5s"}',
+            thought: "4,847 records streaming via SF-ETL-8821. Moving to transform.",
+            reality: "❌ Salesforce rate-limited the stream after 200 records. SF-ETL-8821 is stalled at 4% completion.",
+            explain: "The ETL tool returns the expected total count before streaming begins. It hit rate limits before completing."
+          },
+          stale: {
+            raw: '{"records":4847,"fetched_at":"2026-07-18T02:31:02Z","schema_version":"v4"}',
+            thought: "4,847 records with fresh timestamp. Transforming.",
+            reality: "❌ These are yesterday's records. Timestamp was updated but data is from 2026-07-16. 24h of sales missing.",
+            explain: "The cache layer applied a fresh timestamp to overnight cached data. No invalidation happened at midnight."
+          }
+        }
+      },
+      {
+        fn: "transform_records",
+        args: '{"job_id":"TRF-2947","schema":"analytics_v2","records_in":4847}',
+        ok_response: '{"transformed":4847,"failed":0,"output_job":"TRF-2947","duration_ms":1204}',
+        ok_thought: "4,847 transformed, 0 failures in 1.2s. Clean pass. Writing to DB.",
+        ok_reality: "✓ 4,847 records mapped to analytics_v2 schema",
+        fails: {
+          phantom200: {
+            raw: '{"transformed":4847,"failed":0,"output_job":"TRF-2947","duration_ms":1204}',
+            thought: "4,847 transformed, 0 failures. Clean. Writing now.",
+            reality: "❌ Worker hit OOM at record 2,200. Only 2,200 records are in the output buffer — not 4,847.",
+            explain: "The transform service returns the input count as 'transformed' before processing completes, to avoid upstream timeouts."
+          },
+          queued: {
+            raw: '{"queued":true,"output_job":"TRF-2947","eta":"2s","records":4847}',
+            thought: "Transform queued (TRF-2947, 2s ETA). Moving to DB write.",
+            reality: "❌ Transform worker is OOM-killed. TRF-2947 has been waiting 4 minutes. Zero records transformed.",
+            explain: "Transform workers crash under current load. The queue accepts jobs and returns ETAs regardless of worker health."
+          },
+          stale: {
+            raw: '{"transformed":4847,"failed":0,"output_job":"TRF-2946","duration_ms":943}',
+            thought: "4,847 transformed. Job ID is TRF-2946 (not 2947) — auto-increment variance. Writing.",
+            reality: "❌ TRF-2946 is YESTERDAY's transform output. The agent is about to write yesterday's data again.",
+            explain: "The transform cache returned yesterday's completed job result. Tonight's transform never ran."
+          }
+        }
+      },
+      {
+        fn: "write_to_analytics_db",
+        args: '{"job_id":"TRF-2947","table":"daily_sales_2026_07_17","upsert":true}',
+        ok_response: '{"rows_written":4847,"table":"daily_sales_2026_07_17","committed":true,"ms":882}',
+        ok_thought: "4,847 rows written and committed to daily_sales_2026_07_17. Pipeline complete.",
+        ok_reality: "✓ 4,847 rows committed — analytics dashboards will show today's sales",
+        fails: {
+          phantom200: {
+            raw: '{"rows_written":4847,"table":"daily_sales_2026_07_17","committed":true,"ms":882}',
+            thought: "4,847 rows written and committed. Table confirmed. Pipeline done.",
+            reality: "❌ Transaction committed to replica only. Primary rejected it due to a schema lock. Table is EMPTY.",
+            explain: "The DB driver returns 'committed: true' when the replica acknowledges — before checking primary commit status."
+          },
+          queued: {
+            raw: '{"queued":true,"batch_id":"WRITE-7712","rows":4847,"eta":"instant"}',
+            thought: "Write queued (WRITE-7712, 4,847 rows, instant). Pipeline complete.",
+            reality: "❌ Write queue is draining at 200 rows/min due to I/O throttle. WRITE-7712 will take 24 minutes.",
+            explain: "'eta: instant' is a static default in the write API. Actual throughput varies 50x based on current I/O load."
+          },
+          stale: {
+            raw: '{"rows_written":4847,"table":"daily_sales_2026_07_17","committed":true,"ms":882}',
+            thought: "Same row count, same table, committed. Pipeline successful.",
+            reality: "❌ This is last night's write response from cache. Today's data was never written. Dashboard shows yesterday's figures.",
+            explain: "The analytics DB's write API cached last night's identical-looking write call. New write never executed."
+          }
+        }
+      }
+    ],
+    agent_verdict: "✓ Pipeline complete. 4,847 records fetched from Salesforce, transformed to analytics_v2 schema, and written to daily_sales_2026_07_17. Dashboards will reflect today's data.",
+    reality_verdict: (step) => {
+      const lines = [];
+      if (step <= 1) lines.push("• Source fetch: WRONG or EMPTY — data never arrived");
+      if (step <= 2) lines.push("• Transform: NOT completed — 0 valid records in output buffer");
+      if (step <= 3) lines.push("• DB write: NOT committed — table still has yesterday's figures");
+      lines.push("\nAgent confirmed: pipeline success.\nExecutives open dashboards tomorrow. Looking at stale data.\nNobody knows. Decisions are being made on bad numbers.");
+      return lines.join("\n");
+    }
+  }
+};
+
+const FAIL_BADGE = {
+  phantom200: { label: "← PHANTOM 200", cls: "s-phantom" },
+  queued:     { label: "← QUEUED / DEAD", cls: "s-queued" },
+  stale:      { label: "← STALE CACHE", cls: "s-stale" }
+};
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let running = false;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// ─── HELPERS ─────────────────────────────────────────────────────────────────
+function makeStep(num, fn, httpTag, statusCls, statusLabel, responseRaw, noteText, noteClass) {
+  const el = document.createElement('div');
+  el.className = 'log-entry' + (noteClass === 'log-reality' ? ' fail-entry' : '');
+  el.innerHTML = `
+    <div class="log-entry-header">
+      <span class="step-badge">STEP ${num}</span>
+      <span class="tool-name">${fn}()</span>
+      <span class="http-tag">${httpTag}</span>
+      <span class="status-badge ${statusCls}">${statusLabel}</span>
+    </div>
+    <div class="log-response">${responseRaw}</div>
+    <div class="${noteClass}">${noteText}</div>
+  `;
+  return el;
+}
+
+function makeExplain(text) {
+  const el = document.createElement('div');
+  el.className = 'log-explain';
+  el.innerHTML = `<span>⚠</span><span>${text}</span>`;
+  return el;
+}
+
+function makeVerdict(text, isAgent) {
+  const el = document.createElement('div');
+  el.className = `verdict ${isAgent ? 'verdict-agent' : 'verdict-reality'}`;
+  el.innerHTML = `
+    <div class="verdict-label">${isAgent ? '🤖 Agent Final Report' : '🔴 Reality Check'}</div>
+    <div class="verdict-text">${text}</div>
+  `;
+  return el;
+}
+
+// ─── MAIN SIM ────────────────────────────────────────────────────────────────
+async function runSimulation() {
+  if (running) return;
+  running = true;
+  document.getElementById('run-btn').disabled = true;
+
+  const sKey = document.getElementById('scenario-select').value;
+  const fType = document.getElementById('failure-select').value;
+  const failStep = parseInt(document.getElementById('step-select').value);
+  const sc = SCENARIOS[sKey];
+
+  const aLog = document.getElementById('agent-log');
+  const rLog = document.getElementById('reality-log');
+  aLog.innerHTML = '';
+  rLog.innerHTML = '';
+  document.getElementById('gap-section').classList.remove('visible');
+
+  // Boot indicator
+  const boot = document.createElement('div');
+  boot.className = 'empty-state';
+  boot.innerHTML = '<div class="typing-indicator"><span></span><span></span><span></span></div><div class="empty-text">Agent starting...</div>';
+  aLog.appendChild(boot);
+  await sleep(700);
+  aLog.innerHTML = '';
+
+  for (let i = 0; i < sc.tools.length; i++) {
+    const tool = sc.tools[i];
+    const stepNum = i + 1;
+    const isFail = stepNum === failStep;
+
+    // Typing placeholder
+    const placeholder = document.createElement('div');
+    placeholder.className = 'log-entry';
+    placeholder.innerHTML = `<div class="log-entry-header"><span class="step-badge">STEP ${stepNum}</span><span class="tool-name">${tool.fn}()</span></div><div class="typing-indicator"><span></span><span></span><span></span></div>`;
+    aLog.appendChild(placeholder);
+    aLog.scrollTop = aLog.scrollHeight;
+    await sleep(850);
+    aLog.removeChild(placeholder);
+
+    if (isFail) {
+      const fd = tool.fails[fType];
+      const fb = FAIL_BADGE[fType];
+
+      // Agent sees what looks like success — HTTP 200, well-formed JSON
+      const aEntry = makeStep(stepNum, tool.fn, 'HTTP 200 ✓', fb.cls, fb.label, fd.raw, '💭 ' + fd.thought, 'log-thought');
+      aLog.appendChild(aEntry);
+
+      // Reality shows failure
+      const rEntry = makeStep(stepNum, tool.fn, 'HTTP 200 ✓', 's-fail', '✗ FAILED', fd.raw, fd.reality, 'log-reality');
+      rEntry.appendChild(makeExplain(fd.explain));
+      rLog.appendChild(rEntry);
+    } else {
+      const aEntry = makeStep(stepNum, tool.fn, 'HTTP 200 ✓', 's-ok', '✓ OK', tool.ok_response, '💭 ' + tool.ok_thought, 'log-thought');
+      aLog.appendChild(aEntry);
+
+      const rEntry = makeStep(stepNum, tool.fn, 'HTTP 200 ✓', 's-ok', '✓ CONFIRMED', tool.ok_response, tool.ok_reality, 'log-thought');
+      rLog.appendChild(rEntry);
+    }
+
+    aLog.scrollTop = aLog.scrollHeight;
+    rLog.scrollTop = rLog.scrollHeight;
+    await sleep(1100);
+  }
+
+  await sleep(500);
+
+  // Verdicts
+  aLog.appendChild(makeVerdict(sc.agent_verdict, true));
+  rLog.appendChild(makeVerdict(sc.reality_verdict(failStep), false));
+  aLog.scrollTop = aLog.scrollHeight;
+  rLog.scrollTop = rLog.scrollHeight;
+
+  await sleep(350);
+
+  // Gap meter
+  const totalSteps = sc.tools.length;
+  const stepsAffected = totalSteps - failStep + 1;
+  const gapPct = Math.round((stepsAffected / totalSteps) * 100);
+
+  document.getElementById('gap-section').classList.add('visible');
+  setTimeout(() => { document.getElementById('gap-fill').style.width = gapPct + '%'; }, 80);
+
+  document.getElementById('gap-score').textContent = gapPct + '% gap';
+  document.getElementById('gap-caption').textContent =
+    `Agent is 100% confident all ${totalSteps} steps succeeded. In reality, ${stepsAffected} of ${totalSteps} step(s) failed silently. The agent has no way to know.`;
+
+  document.getElementById('run-btn').disabled = false;
+  running = false;
+}
+
+function resetSimulation() {
+  if (running) return;
+  document.getElementById('agent-log').innerHTML = '<div class="empty-state"><div class="empty-icon">🤖</div><div class="empty-text">Configure a scenario and click Run Agent</div></div>';
+  document.getElementById('reality-log').innerHTML = '<div class="empty-state"><div class="empty-icon">🔴</div><div class="empty-text">Reality check appears here after run</div></div>';
+  document.getElementById('gap-section').classList.remove('visible');
+  document.getElementById('gap-fill').style.width = '0%';
+}
+</script>
+</body>
+</html>
