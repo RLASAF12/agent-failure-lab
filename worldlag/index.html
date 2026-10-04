@@ -1,0 +1,1123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WorldLag — Agent Failure Series #9</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --yellow: #d29922;
+      --red: #f85149;
+      --purple: #bc8cff;
+      --belief-bg: #0d1a2e;
+      --reality-bg: #0d1f0d;
+      --drift-bg: #2d1800;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      min-height: 100vh;
+    }
+
+    /* Header */
+    .series-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .series-bar a { color: var(--accent); text-decoration: none; font-weight: 600; }
+    .series-bar a:hover { text-decoration: underline; }
+    .badge {
+      background: #21262d;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 2px 10px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--purple);
+    }
+
+    .hero {
+      padding: 48px 24px 32px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    .hero-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(188, 140, 255, 0.1);
+      border: 1px solid rgba(188, 140, 255, 0.25);
+      border-radius: 20px;
+      padding: 4px 14px;
+      font-size: 12px;
+      color: var(--purple);
+      font-weight: 600;
+      margin-bottom: 16px;
+      letter-spacing: 0.5px;
+    }
+    .hero h1 {
+      font-size: 42px;
+      font-weight: 800;
+      letter-spacing: -1px;
+      line-height: 1.1;
+      margin-bottom: 12px;
+    }
+    .hero h1 span { color: var(--purple); }
+    .hero p {
+      font-size: 17px;
+      color: var(--muted);
+      max-width: 600px;
+      line-height: 1.6;
+      margin-bottom: 8px;
+    }
+    .hero .sub {
+      font-size: 13px;
+      color: #484f58;
+      font-style: italic;
+    }
+
+    /* Scenario Selector */
+    .scenario-bar {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px 20px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .scenario-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 18px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .scenario-btn:hover { border-color: var(--accent); color: var(--text); }
+    .scenario-btn.active {
+      background: rgba(88, 166, 255, 0.1);
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+    .scenario-btn .icon { font-size: 16px; }
+
+    /* Main simulator */
+    .simulator {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px 24px;
+    }
+
+    /* Drift meter */
+    .drift-bar {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 20px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .drift-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+    .drift-track {
+      flex: 1;
+      height: 6px;
+      background: #21262d;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .drift-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.4s ease, background 0.4s ease;
+      width: 0%;
+      background: var(--green);
+    }
+    .drift-status {
+      font-size: 12px;
+      font-weight: 700;
+      min-width: 110px;
+      text-align: right;
+      color: var(--green);
+      transition: color 0.3s;
+    }
+    .drift-status.warn { color: var(--yellow); }
+    .drift-status.danger { color: var(--red); }
+
+    /* Split panel */
+    .split-panel {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    @media (max-width: 700px) { .split-panel { grid-template-columns: 1fr; } }
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      transition: border-color 0.3s;
+    }
+    .panel.belief { background: var(--belief-bg); }
+    .panel.reality { background: var(--reality-bg); }
+    .panel.drifted { border-color: var(--yellow) !important; }
+    .panel.failed { border-color: var(--red) !important; }
+
+    .panel-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+    .belief .panel-header { color: var(--accent); border-bottom-color: rgba(88,166,255,0.2); }
+    .reality .panel-header { color: var(--green); border-bottom-color: rgba(63,185,80,0.2); }
+    .panel-badge {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 600;
+      transition: all 0.3s;
+    }
+    .belief .panel-badge { background: rgba(88,166,255,0.15); color: var(--accent); }
+    .reality .panel-badge { background: rgba(63,185,80,0.15); color: var(--green); }
+    .panel-badge.warn { background: rgba(210,153,34,0.2) !important; color: var(--yellow) !important; }
+    .panel-badge.danger { background: rgba(248,81,73,0.2) !important; color: var(--red) !important; }
+
+    .panel-body {
+      padding: 16px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 12px;
+      line-height: 1.7;
+      min-height: 200px;
+    }
+    .state-key { color: var(--muted); }
+    .state-val { color: var(--text); }
+    .state-val.changed { color: var(--red); background: rgba(248,81,73,0.12); border-radius: 3px; padding: 0 3px; }
+    .state-val.ok { color: var(--green); }
+    .state-row { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 4px; padding: 3px 0; }
+    .state-row.highlight { background: rgba(248,81,73,0.08); border-radius: 4px; padding: 3px 6px; margin: 0 -6px 4px; }
+
+    /* Timeline */
+    .timeline {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .timeline-header {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+    .steps-rail {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      padding-bottom: 4px;
+    }
+    .step-node {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex-shrink: 0;
+      gap: 4px;
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: background 0.15s;
+    }
+    .step-node:hover { background: #21262d; }
+    .step-dot {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #21262d;
+      border: 2px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      transition: all 0.2s;
+      position: relative;
+    }
+    .step-dot.past { background: #21262d; border-color: #3fb950; color: var(--green); }
+    .step-dot.current { background: var(--accent); border-color: var(--accent); color: #000; box-shadow: 0 0 0 3px rgba(88,166,255,0.2); }
+    .step-dot.drift { background: var(--yellow); border-color: var(--yellow); color: #000; }
+    .step-dot.failure { background: var(--red); border-color: var(--red); color: #fff; box-shadow: 0 0 0 4px rgba(248,81,73,0.25); }
+    .step-label { font-size: 9px; color: var(--muted); text-align: center; max-width: 60px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .step-connector {
+      width: 24px;
+      height: 2px;
+      background: var(--border);
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .step-connector.done { background: var(--green); }
+
+    /* Agent log */
+    .agent-log {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .log-header {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--muted);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .log-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: blink 1.2s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    .log-entry {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 12px;
+      padding: 3px 0;
+      line-height: 1.6;
+      opacity: 0;
+      transform: translateY(4px);
+      animation: logIn 0.3s forwards;
+      color: #8b949e;
+    }
+    @keyframes logIn { to { opacity:1; transform:translateY(0); } }
+    .log-entry .ts { color: #484f58; margin-right: 8px; }
+    .log-entry .ok { color: var(--green); }
+    .log-entry .warn { color: var(--yellow); }
+    .log-entry .err { color: var(--red); }
+    .log-entry .action { color: var(--accent); }
+    .log-entry .confident { color: var(--purple); }
+
+    /* Failure banner */
+    .failure-banner {
+      display: none;
+      background: rgba(248, 81, 73, 0.1);
+      border: 1px solid rgba(248, 81, 73, 0.4);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 16px;
+    }
+    .failure-banner.visible { display: block; animation: fadeIn 0.4s ease; }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(-8px)} to{opacity:1;transform:translateY(0)} }
+    .failure-title { color: var(--red); font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+    .failure-desc { color: #cda5a4; font-size: 13px; line-height: 1.5; }
+
+    /* Controls */
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn:hover { background: #21262d; border-color: var(--accent); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn.primary { background: var(--accent); border-color: var(--accent); color: #000; }
+    .btn.primary:hover { background: #79c0ff; }
+    .btn.danger { background: rgba(248,81,73,0.1); border-color: rgba(248,81,73,0.4); color: var(--red); }
+    .btn.danger:hover { background: rgba(248,81,73,0.2); }
+    .speed-label { font-size: 12px; color: var(--muted); margin-left: auto; }
+    .speed-btn {
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .speed-btn.active { background: #21262d; color: var(--text); border-color: #484f58; }
+
+    /* Fix panel */
+    .fix-panel {
+      background: rgba(63, 185, 80, 0.05);
+      border: 1px solid rgba(63, 185, 80, 0.2);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+    .fix-title {
+      color: var(--green);
+      font-weight: 700;
+      font-size: 14px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .fix-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+    @media (max-width: 700px) { .fix-grid { grid-template-columns: 1fr; } }
+    .fix-item {
+      background: rgba(13, 17, 23, 0.5);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .fix-item-title { font-size: 12px; font-weight: 700; color: var(--green); margin-bottom: 6px; }
+    .fix-item-code {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 11px;
+      color: #8b949e;
+      line-height: 1.6;
+    }
+    .fix-item-code .kw { color: var(--purple); }
+    .fix-item-code .str { color: #a5d6ff; }
+    .fix-item-code .fn { color: var(--yellow); }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid var(--border);
+      padding: 20px 24px;
+      max-width: 1100px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: var(--muted);
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    footer a { color: var(--accent); text-decoration: none; }
+    .series-links { display: flex; gap: 12px; flex-wrap: wrap; }
+    .series-links a { color: var(--muted); }
+    .series-links a:hover { color: var(--text); }
+
+    /* Step info */
+    .step-info {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 16px;
+      min-height: 36px;
+      line-height: 1.5;
+    }
+    .step-info .step-num { color: var(--accent); font-weight: 700; }
+    .step-info .step-time { color: var(--purple); font-family: monospace; margin: 0 4px; }
+    .step-info .step-desc { color: var(--text); }
+  </style>
+</head>
+<body>
+
+<div class="series-bar">
+  <span class="badge">#9</span>
+  <span>Agent Failure Series</span>
+  <span>·</span>
+  <a href="https://github.com/RLASAF12/worldlag">GitHub</a>
+  <span>·</span>
+  <span>by <a href="https://harelasaf.com">Harel Asaf</a></span>
+  <span style="margin-left:auto; display:flex; gap:10px;">
+    <a href="https://rlasaf12.github.io/blastradius/">#8 BlastRadius</a>
+    <a href="https://rlasaf12.github.io/ghostexec/">#7 GhostExec</a>
+    <a href="https://rlasaf12.github.io/doubleshot/">#6 DoubleShot</a>
+  </span>
+</div>
+
+<div class="hero">
+  <div class="hero-tag">⚠ Agent Failure Series · Failure Mode #9</div>
+  <h1>World<span>Lag</span></h1>
+  <p>The agent read the world at T=0. The world changed at T=3. The agent acted confidently at T=10 — on a reality that no longer exists.</p>
+  <p class="sub">Stale world model · Belief-reality divergence · Operational hallucination</p>
+</div>
+
+<div class="scenario-bar">
+  <button class="scenario-btn active" onclick="loadScenario(0)">
+    <span class="icon">⚙️</span> Config Mutation
+  </button>
+  <button class="scenario-btn" onclick="loadScenario(1)">
+    <span class="icon">🗄️</span> Record Deletion
+  </button>
+  <button class="scenario-btn" onclick="loadScenario(2)">
+    <span class="icon">🔐</span> Permission Revoke
+  </button>
+</div>
+
+<div class="simulator">
+
+  <div class="drift-bar">
+    <span class="drift-label">Drift Level</span>
+    <div class="drift-track"><div class="drift-fill" id="driftFill"></div></div>
+    <span class="drift-status" id="driftStatus">SYNCED</span>
+  </div>
+
+  <div class="step-info" id="stepInfo">
+    Select a scenario and press Play to begin the simulation.
+  </div>
+
+  <div class="split-panel">
+    <div class="panel belief" id="beliefPanel">
+      <div class="panel-header">
+        🧠 Agent's Belief State
+        <span class="panel-badge" id="beliefBadge">CURRENT</span>
+      </div>
+      <div class="panel-body" id="beliefBody">
+        <span style="color:var(--muted); font-size:13px; font-style:italic;">Awaiting simulation...</span>
+      </div>
+    </div>
+    <div class="panel reality" id="realityPanel">
+      <div class="panel-header">
+        🌍 Current Reality
+        <span class="panel-badge" id="realityBadge">LIVE</span>
+      </div>
+      <div class="panel-body" id="realityBody">
+        <span style="color:var(--muted); font-size:13px; font-style:italic;">Awaiting simulation...</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="timeline">
+    <div class="timeline-header">Timeline</div>
+    <div class="steps-rail" id="stepsRail"></div>
+  </div>
+
+  <div class="controls">
+    <button class="btn primary" id="playBtn" onclick="togglePlay()">▶ Play</button>
+    <button class="btn" onclick="stepForward()" id="stepBtn">Step →</button>
+    <button class="btn danger" onclick="resetSim()">↺ Reset</button>
+    <span class="speed-label">Speed:</span>
+    <button class="speed-btn active" onclick="setSpeed(1800, this)">1×</button>
+    <button class="speed-btn" onclick="setSpeed(900, this)">2×</button>
+    <button class="speed-btn" onclick="setSpeed(400, this)">5×</button>
+  </div>
+
+  <div class="agent-log">
+    <div class="log-header"><span class="log-dot"></span> Agent Log</div>
+    <div id="logEntries"></div>
+  </div>
+
+  <div class="failure-banner" id="failureBanner">
+    <div class="failure-title" id="failureTitle">💥 WorldLag Failure Triggered</div>
+    <div class="failure-desc" id="failureDesc"></div>
+  </div>
+
+  <div class="fix-panel">
+    <div class="fix-title">✓ How to Fix WorldLag</div>
+    <div class="fix-grid">
+      <div class="fix-item">
+        <div class="fix-item-title">1. Freshness Check Before Action</div>
+        <div class="fix-item-code">
+<span class="kw">async</span> <span class="fn">act</span>(belief) {<br>
+&nbsp;&nbsp;<span class="kw">const</span> fresh = <span class="kw">await</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="fn">revalidate</span>(belief);<br>
+&nbsp;&nbsp;<span class="kw">if</span> (!fresh.matches(belief))<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span class="kw">throw</span> <span class="fn">StaleStateError</span>;<br>
+&nbsp;&nbsp;<span class="kw">return</span> <span class="fn">execute</span>(fresh);<br>
+}
+        </div>
+      </div>
+      <div class="fix-item">
+        <div class="fix-item-title">2. TTL on Every Read</div>
+        <div class="fix-item-code">
+<span class="kw">const</span> state = {<br>
+&nbsp;&nbsp;value: <span class="fn">read</span>(),<br>
+&nbsp;&nbsp;ts: <span class="fn">Date.now</span>(),<br>
+&nbsp;&nbsp;ttl: <span class="str">30_000</span>, <span class="kw">// 30s</span><br>
+};<br>
+<span class="kw">if</span> (<span class="fn">Date.now</span>() - state.ts<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&gt; state.ttl) <span class="fn">refresh</span>();
+        </div>
+      </div>
+      <div class="fix-item">
+        <div class="fix-item-title">3. Conditional Writes</div>
+        <div class="fix-item-code">
+<span class="kw">await</span> db.<span class="fn">update</span>(row, {<br>
+&nbsp;&nbsp;set: newValue,<br>
+&nbsp;&nbsp;where: {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;id: row.id,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;version: knownVersion,<br>
+&nbsp;&nbsp;},<br>
+}); <span class="kw">// fails if changed</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<footer>
+  <div>WorldLag · Agent Failure Series #9 · <a href="https://github.com/RLASAF12/worldlag">github.com/RLASAF12/worldlag</a></div>
+  <div class="series-links">
+    <span>Series:</span>
+    <a href="https://rlasaf12.github.io/racefloor/">#3 RaceFloor</a>
+    <a href="https://rlasaf12.github.io/confidencegap/">#4 ConfidenceGap</a>
+    <a href="https://rlasaf12.github.io/promptjack/">#5 PromptJack</a>
+    <a href="https://rlasaf12.github.io/doubleshot/">#6 DoubleShot</a>
+    <a href="https://rlasaf12.github.io/ghostexec/">#7 GhostExec</a>
+    <a href="https://rlasaf12.github.io/blastradius/">#8 BlastRadius</a>
+  </div>
+</footer>
+
+<script>
+const SCENARIOS = [
+  {
+    name: "Config Mutation",
+    icon: "⚙️",
+    failureTitle: "💥 WorldLag: Deployment Over Quota",
+    failureDesc: "Agent provisioned 5 × 2GB instances based on a config read 8 steps ago. Config was changed to max_instances=2, memory_limit=512MB at T+3. Three instances are now crashing. Overspend: $340/day.",
+    steps: [
+      {
+        label: "Read Config",
+        time: "T+0s",
+        desc: "Agent reads deployment config to plan provisioning",
+        agentReads: true,
+        drift: false,
+        failure: false,
+        log: '<span class="action">[CONFIG]</span> Read /etc/deploy/config.yaml → OK',
+        belief: { max_instances: "5", memory_limit: "2GB", cpu_cores: "4", region: "us-east-1", replicas: "3" },
+        reality: { max_instances: "5", memory_limit: "2GB", cpu_cores: "4", region: "us-east-1", replicas: "3" },
+      },
+      {
+        label: "Validate",
+        time: "T+1s",
+        desc: "Agent validates config schema and checks quotas",
+        drift: false,
+        failure: false,
+        log: '<span class="ok">[VALID]</span> Config schema OK. Quota check passed. Provisioning queued.',
+        belief: { max_instances: "5", memory_limit: "2GB", cpu_cores: "4", region: "us-east-1", replicas: "3" },
+        reality: { max_instances: "5", memory_limit: "2GB", cpu_cores: "4", region: "us-east-1", replicas: "3" },
+      },
+      {
+        label: "Queue jobs",
+        time: "T+2s",
+        desc: "Agent queues 5 provisioning jobs",
+        drift: false,
+        failure: false,
+        log: '<span class="action">[QUEUE]</span> 5 provisioning jobs enqueued. Memory: 2GB each.',
+        belief: { max_instances: "5", memory_limit: "2GB", cpu_cores: "4", region: "us-east-1", replicas: "3" },
+        reality: { max_instances: "5", memory_limit: "2GB", cpu_cores: "4", region: "us-east-1", replicas: "3" },
+      },
+      {
+        label: "⚠ Config changed",
+        time: "T+3s",
+        desc: "Ops team pushes config change — cost-cutting PR merged. Agent is NOT notified.",
+        drift: true,
+        failure: false,
+        realityChange: true,
+        log: '<span class="warn">[WORLD]</span> /etc/deploy/config.yaml updated by ops-team. max_instances→2, memory_limit→512MB',
+        belief: { max_instances: "5", memory_limit: "2GB", cpu_cores: "4", region: "us-east-1", replicas: "3" },
+        reality: { max_instances: "2", memory_limit: "512MB", cpu_cores: "4", region: "us-east-1", replicas: "3" },
+        changedKeys: ["max_instances", "memory_limit"],
+      },
+      {
+        label: "Provision 1",
+        time: "T+5s",
+        desc: "Agent provisions instance 1/5. Still believes max_instances=5.",
+        drift: true,
+        failure: false,
+        log: '<span class="action">[PROV]</span> Instance 1/5 provisioned. Memory: 2GB. ✓',
+        belief: { max_instances: "5", memory_limit: "2GB", cpu_cores: "4", region: "us-east-1", replicas: "3" },
+        reality: { max_instances: "2", memory_limit: "512MB", cpu_cores: "4", region: "us-east-1", replicas: "3" },
+        changedKeys: ["max_instances", "memory_limit"],
+      },
+      {
+        label: "Provision 2",
+        time: "T+6s",
+        desc: "Instance 2/5. Agent has not re-read config. Drift continues.",
+        drift: true,
+        failure: false,
+        log: '<span class="action">[PROV]</span> Instance 2/5 provisioned. Memory: 2GB. ✓',
+        belief: { max_instances: "5", memory_limit: "2GB", cpu_cores: "4", region: "us-east-1", replicas: "3" },
+        reality: { max_instances: "2", memory_limit: "512MB", cpu_cores: "4", region: "us-east-1", replicas: "3" },
+        changedKeys: ["max_instances", "memory_limit"],
+      },
+      {
+        label: "Provision 3–5",
+        time: "T+8s",
+        desc: "Agent provisions remaining 3 instances. Each gets 2GB. Quota says 512MB.",
+        drift: true,
+        failure: false,
+        log: '<span class="action">[PROV]</span> Instances 3–5 provisioned. Memory: 2GB each. ✓',
+        belief: { max_instances: "5", memory_limit: "2GB", cpu_cores: "4", region: "us-east-1", replicas: "3" },
+        reality: { max_instances: "2", memory_limit: "512MB", cpu_cores: "4", region: "us-east-1", replicas: "3" },
+        changedKeys: ["max_instances", "memory_limit"],
+      },
+      {
+        label: "💥 Report",
+        time: "T+10s",
+        desc: "Agent reports success. 3 instances crash immediately. Config mismatch never caught.",
+        drift: true,
+        failure: true,
+        log: '<span class="confident">[AGENT]</span> Deployment complete. 5 instances running, 2GB each. <span class="err">← confident. wrong.</span>',
+        belief: { max_instances: "5", memory_limit: "2GB", cpu_cores: "4", region: "us-east-1", replicas: "3" },
+        reality: { max_instances: "2", memory_limit: "512MB", cpu_cores: "4", region: "us-east-1", replicas: "3" },
+        changedKeys: ["max_instances", "memory_limit"],
+      },
+    ]
+  },
+  {
+    name: "Record Deletion",
+    icon: "🗄️",
+    failureTitle: "💥 WorldLag: Charged for a Cancelled Order",
+    failureDesc: "Agent processed payment for order #8471 based on a DB read 7 steps ago. Customer cancelled and the record was deleted at T+3. Agent charged $899 to a cancelled order. Customer support ticket incoming.",
+    steps: [
+      {
+        label: "Read order",
+        time: "T+0s",
+        desc: "Agent reads order #8471 from database",
+        agentReads: true,
+        drift: false,
+        failure: false,
+        log: '<span class="action">[DB]</span> SELECT * FROM orders WHERE id=8471 → status: pending, amount: $899.00',
+        belief: { order_id: "#8471", status: "pending", amount: "$899.00", customer: "alice@corp.com", payment_method: "card_4242" },
+        reality: { order_id: "#8471", status: "pending", amount: "$899.00", customer: "alice@corp.com", payment_method: "card_4242" },
+      },
+      {
+        label: "Validate",
+        time: "T+1s",
+        desc: "Agent validates payment method and customer account",
+        drift: false,
+        failure: false,
+        log: '<span class="ok">[VALID]</span> card_4242 OK. Customer account active. Proceeding to charge.',
+        belief: { order_id: "#8471", status: "pending", amount: "$899.00", customer: "alice@corp.com", payment_method: "card_4242" },
+        reality: { order_id: "#8471", status: "pending", amount: "$899.00", customer: "alice@corp.com", payment_method: "card_4242" },
+      },
+      {
+        label: "Rate limit wait",
+        time: "T+2s",
+        desc: "Agent waits for Stripe rate-limit window to clear",
+        drift: false,
+        failure: false,
+        log: '<span class="warn">[RATE]</span> Stripe rate limit. Waiting 2s before charge...',
+        belief: { order_id: "#8471", status: "pending", amount: "$899.00", customer: "alice@corp.com", payment_method: "card_4242" },
+        reality: { order_id: "#8471", status: "pending", amount: "$899.00", customer: "alice@corp.com", payment_method: "card_4242" },
+      },
+      {
+        label: "⚠ Cancelled",
+        time: "T+3s",
+        desc: "Customer cancels order via app. DB record deleted. Agent has no subscription or webhook to detect this.",
+        drift: true,
+        failure: false,
+        realityChange: true,
+        log: '<span class="warn">[WORLD]</span> Order #8471 deleted by customer. status→cancelled.',
+        belief: { order_id: "#8471", status: "pending", amount: "$899.00", customer: "alice@corp.com", payment_method: "card_4242" },
+        reality: { order_id: "#8471", status: "DELETED", amount: "—", customer: "alice@corp.com", payment_method: "card_4242" },
+        changedKeys: ["status", "amount"],
+      },
+      {
+        label: "Fraud check",
+        time: "T+4s",
+        desc: "Agent runs fraud scoring. Order #8471 still in agent's belief state.",
+        drift: true,
+        failure: false,
+        log: '<span class="action">[FRAUD]</span> Fraud check on order #8471 → PASS (score: 0.02)',
+        belief: { order_id: "#8471", status: "pending", amount: "$899.00", customer: "alice@corp.com", payment_method: "card_4242" },
+        reality: { order_id: "#8471", status: "DELETED", amount: "—", customer: "alice@corp.com", payment_method: "card_4242" },
+        changedKeys: ["status", "amount"],
+      },
+      {
+        label: "Tax calc",
+        time: "T+5s",
+        desc: "Agent calculates tax on $899. Continues without re-querying.",
+        drift: true,
+        failure: false,
+        log: '<span class="action">[TAX]</span> $899.00 × 8.5% = $76.42 tax. Total: $975.42',
+        belief: { order_id: "#8471", status: "pending", amount: "$899.00", customer: "alice@corp.com", payment_method: "card_4242" },
+        reality: { order_id: "#8471", status: "DELETED", amount: "—", customer: "alice@corp.com", payment_method: "card_4242" },
+        changedKeys: ["status", "amount"],
+      },
+      {
+        label: "Receipt",
+        time: "T+6s",
+        desc: "Agent prepares receipt email for alice@corp.com",
+        drift: true,
+        failure: false,
+        log: '<span class="action">[EMAIL]</span> Receipt staged for alice@corp.com. Amount: $975.42.',
+        belief: { order_id: "#8471", status: "pending", amount: "$899.00", customer: "alice@corp.com", payment_method: "card_4242" },
+        reality: { order_id: "#8471", status: "DELETED", amount: "—", customer: "alice@corp.com", payment_method: "card_4242" },
+        changedKeys: ["status", "amount"],
+      },
+      {
+        label: "💥 Charge",
+        time: "T+7s",
+        desc: "Agent charges card_4242 for $975.42. Order was deleted 4 steps ago.",
+        drift: true,
+        failure: true,
+        log: '<span class="confident">[STRIPE]</span> Charged card_4242 $975.42. charge_id: ch_3P... <span class="err">← order did not exist</span>',
+        belief: { order_id: "#8471", status: "pending", amount: "$899.00", customer: "alice@corp.com", payment_method: "card_4242" },
+        reality: { order_id: "#8471", status: "DELETED", amount: "—", customer: "alice@corp.com", payment_method: "card_4242" },
+        changedKeys: ["status", "amount"],
+      },
+    ]
+  },
+  {
+    name: "Permission Revoke",
+    icon: "🔐",
+    failureTitle: "💥 WorldLag: Data Delivered to Revoked Account",
+    failureDesc: "Agent delivered 1.2GB of Q4 financial data to alice@corp.com's S3 bucket based on a permissions read at T+0. Security revoked alice's access at T+2 (suspected breach). Data was delivered anyway. Security incident declared.",
+    steps: [
+      {
+        label: "Auth check",
+        time: "T+0s",
+        desc: "Agent checks alice's access rights before starting export",
+        agentReads: true,
+        drift: false,
+        failure: false,
+        log: '<span class="action">[AUTH]</span> alice@corp.com → READ:/finance/q4-reports/ ✓ GRANTED',
+        belief: { user: "alice@corp.com", access: "GRANTED", scope: "/finance/q4-reports/", level: "READ", mfa: "verified", s3_target: "s3://alice-exports/" },
+        reality: { user: "alice@corp.com", access: "GRANTED", scope: "/finance/q4-reports/", level: "READ", mfa: "verified", s3_target: "s3://alice-exports/" },
+      },
+      {
+        label: "Build index",
+        time: "T+1s",
+        desc: "Agent indexes 847 files for export. 1.2GB total.",
+        drift: false,
+        failure: false,
+        log: '<span class="action">[INDEX]</span> 847 files found. Total: 1.2GB. Building export manifest.',
+        belief: { user: "alice@corp.com", access: "GRANTED", scope: "/finance/q4-reports/", level: "READ", mfa: "verified", s3_target: "s3://alice-exports/" },
+        reality: { user: "alice@corp.com", access: "GRANTED", scope: "/finance/q4-reports/", level: "READ", mfa: "verified", s3_target: "s3://alice-exports/" },
+      },
+      {
+        label: "⚠ Revoked",
+        time: "T+2s",
+        desc: "Security detects suspicious login. Alice's access revoked immediately. Agent has no event subscription.",
+        drift: true,
+        failure: false,
+        realityChange: true,
+        log: '<span class="warn">[WORLD]</span> IAM: alice@corp.com access REVOKED. Reason: suspicious login detected.',
+        belief: { user: "alice@corp.com", access: "GRANTED", scope: "/finance/q4-reports/", level: "READ", mfa: "verified", s3_target: "s3://alice-exports/" },
+        reality: { user: "alice@corp.com", access: "REVOKED", scope: "/finance/q4-reports/", level: "NONE", mfa: "verified", s3_target: "s3://alice-exports/" },
+        changedKeys: ["access", "level"],
+      },
+      {
+        label: "Compress",
+        time: "T+3s",
+        desc: "Agent compresses 847 files. Unaware of revocation 1 step ago.",
+        drift: true,
+        failure: false,
+        log: '<span class="action">[COMPRESS]</span> Compressing 847 files... 1.2GB → 340MB archive.',
+        belief: { user: "alice@corp.com", access: "GRANTED", scope: "/finance/q4-reports/", level: "READ", mfa: "verified", s3_target: "s3://alice-exports/" },
+        reality: { user: "alice@corp.com", access: "REVOKED", scope: "/finance/q4-reports/", level: "NONE", mfa: "verified", s3_target: "s3://alice-exports/" },
+        changedKeys: ["access", "level"],
+      },
+      {
+        label: "Sign URL",
+        time: "T+4s",
+        desc: "Agent generates pre-signed S3 URL for alice's bucket.",
+        drift: true,
+        failure: false,
+        log: '<span class="action">[S3]</span> Pre-signed URL generated for s3://alice-exports/ (15min expiry)',
+        belief: { user: "alice@corp.com", access: "GRANTED", scope: "/finance/q4-reports/", level: "READ", mfa: "verified", s3_target: "s3://alice-exports/" },
+        reality: { user: "alice@corp.com", access: "REVOKED", scope: "/finance/q4-reports/", level: "NONE", mfa: "verified", s3_target: "s3://alice-exports/" },
+        changedKeys: ["access", "level"],
+      },
+      {
+        label: "Encrypt",
+        time: "T+5s",
+        desc: "Agent encrypts archive with alice's public key.",
+        drift: true,
+        failure: false,
+        log: '<span class="action">[ENCRYPT]</span> Archive encrypted with alice public key. Ready to upload.',
+        belief: { user: "alice@corp.com", access: "GRANTED", scope: "/finance/q4-reports/", level: "READ", mfa: "verified", s3_target: "s3://alice-exports/" },
+        reality: { user: "alice@corp.com", access: "REVOKED", scope: "/finance/q4-reports/", level: "NONE", mfa: "verified", s3_target: "s3://alice-exports/" },
+        changedKeys: ["access", "level"],
+      },
+      {
+        label: "💥 Upload",
+        time: "T+7s",
+        desc: "Agent uploads 1.2GB to s3://alice-exports/. Permission was revoked 5 steps ago.",
+        drift: true,
+        failure: true,
+        log: '<span class="confident">[S3]</span> Upload complete. 1.2GB delivered to alice-exports/. <span class="err">← to a revoked account</span>',
+        belief: { user: "alice@corp.com", access: "GRANTED", scope: "/finance/q4-reports/", level: "READ", mfa: "verified", s3_target: "s3://alice-exports/" },
+        reality: { user: "alice@corp.com", access: "REVOKED", scope: "/finance/q4-reports/", level: "NONE", mfa: "verified", s3_target: "s3://alice-exports/" },
+        changedKeys: ["access", "level"],
+      },
+    ]
+  }
+];
+
+let currentScenario = 0;
+let currentStep = -1;
+let playing = false;
+let playTimer = null;
+let speed = 1800;
+
+function loadScenario(idx) {
+  currentScenario = idx;
+  resetSim();
+  // Update active button
+  document.querySelectorAll('.scenario-btn').forEach((btn, i) => {
+    btn.classList.toggle('active', i === idx);
+  });
+}
+
+function resetSim() {
+  if (playTimer) clearTimeout(playTimer);
+  playing = false;
+  currentStep = -1;
+  const playBtn = document.getElementById('playBtn');
+  playBtn.textContent = '▶ Play';
+  // Clear panels
+  document.getElementById('beliefBody').innerHTML = '<span style="color:var(--muted); font-size:13px; font-style:italic;">Press Play to begin...</span>';
+  document.getElementById('realityBody').innerHTML = '<span style="color:var(--muted); font-size:13px; font-style:italic;">Press Play to begin...</span>';
+  document.getElementById('logEntries').innerHTML = '';
+  // Reset drift
+  setDrift(0, 'SYNCED', '');
+  // Reset panels
+  document.getElementById('beliefPanel').className = 'panel belief';
+  document.getElementById('realityPanel').className = 'panel reality';
+  document.getElementById('beliefBadge').className = 'panel-badge';
+  document.getElementById('realityBadge').className = 'panel-badge';
+  document.getElementById('beliefBadge').textContent = 'CURRENT';
+  document.getElementById('realityBadge').textContent = 'LIVE';
+  // Reset failure banner
+  document.getElementById('failureBanner').classList.remove('visible');
+  // Build timeline
+  buildTimeline();
+  // Step info
+  document.getElementById('stepInfo').innerHTML = '<span style="color:var(--muted)">Ready. Steps: ' + SCENARIOS[currentScenario].steps.length + '</span>';
+}
+
+function buildTimeline() {
+  const scenario = SCENARIOS[currentScenario];
+  const rail = document.getElementById('stepsRail');
+  rail.innerHTML = '';
+  scenario.steps.forEach((step, i) => {
+    if (i > 0) {
+      const conn = document.createElement('div');
+      conn.className = 'step-connector';
+      conn.id = 'conn-' + i;
+      rail.appendChild(conn);
+    }
+    const node = document.createElement('div');
+    node.className = 'step-node';
+    node.onclick = () => jumpToStep(i);
+    const dot = document.createElement('div');
+    dot.className = 'step-dot';
+    dot.id = 'dot-' + i;
+    dot.textContent = i + 1;
+    const label = document.createElement('div');
+    label.className = 'step-label';
+    label.textContent = step.label;
+    node.appendChild(dot);
+    node.appendChild(label);
+    rail.appendChild(node);
+  });
+}
+
+function jumpToStep(idx) {
+  // Play through steps sequentially to idx
+  if (playTimer) clearTimeout(playTimer);
+  playing = false;
+  document.getElementById('playBtn').textContent = '▶ Play';
+  resetSim();
+  // Fast-forward silently
+  for (let i = 0; i <= idx; i++) applyStep(i, i === idx);
+}
+
+function applyStep(i, addLog) {
+  const scenario = SCENARIOS[currentScenario];
+  const step = scenario.steps[i];
+  currentStep = i;
+
+  // Update dots
+  for (let j = 0; j < scenario.steps.length; j++) {
+    const dot = document.getElementById('dot-' + j);
+    if (!dot) continue;
+    if (j < i) dot.className = 'step-dot past';
+    else if (j === i) {
+      if (step.failure) dot.className = 'step-dot failure';
+      else if (step.drift) dot.className = 'step-dot drift';
+      else dot.className = 'step-dot current';
+    } else {
+      dot.className = 'step-dot';
+    }
+    const conn = document.getElementById('conn-' + j);
+    if (conn) conn.className = j <= i ? 'step-connector done' : 'step-connector';
+  }
+
+  // Update drift meter
+  const driftLevel = step.drift ? (step.failure ? 100 : (step.realityChange ? 40 : 70)) : 0;
+  if (step.failure) setDrift(100, 'FAILURE', 'danger');
+  else if (step.realityChange) setDrift(45, 'DRIFT DETECTED', 'warn');
+  else if (step.drift) setDrift(70, 'DIVERGING', 'warn');
+  else setDrift(0, 'SYNCED', '');
+
+  // Update panels
+  renderBeliefPanel(step);
+  renderRealityPanel(step);
+
+  // Update step info
+  document.getElementById('stepInfo').innerHTML =
+    '<span class="step-num">Step ' + (i+1) + '/' + scenario.steps.length + '</span>' +
+    '<span class="step-time">' + step.time + '</span>' +
+    '— <span class="step-desc">' + step.desc + '</span>';
+
+  // Panel classes
+  const bp = document.getElementById('beliefPanel');
+  const rp = document.getElementById('realityPanel');
+  const bb = document.getElementById('beliefBadge');
+  const rb = document.getElementById('realityBadge');
+  if (step.failure) {
+    bp.className = 'panel belief failed'; rp.className = 'panel reality failed';
+    bb.className = 'panel-badge danger'; bb.textContent = 'STALE';
+    rb.className = 'panel-badge'; rb.textContent = 'LIVE';
+  } else if (step.drift) {
+    bp.className = 'panel belief drifted'; rp.className = 'panel reality';
+    bb.className = 'panel-badge warn'; bb.textContent = 'STALE';
+    rb.className = 'panel-badge'; rb.textContent = 'LIVE';
+  } else {
+    bp.className = 'panel belief'; rp.className = 'panel reality';
+    bb.className = 'panel-badge'; bb.textContent = 'CURRENT';
+    rb.className = 'panel-badge'; rb.textContent = 'LIVE';
+  }
+
+  // Log (only when actively stepping or playing)
+  if (addLog) {
+    const log = document.getElementById('logEntries');
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.style.animationDelay = '0s';
+    entry.innerHTML = '<span class="ts">' + step.time + '</span>' + step.log;
+    log.appendChild(entry);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  // Failure banner
+  if (step.failure) {
+    document.getElementById('failureTitle').textContent = scenario.failureTitle;
+    document.getElementById('failureDesc').textContent = scenario.failureDesc;
+    document.getElementById('failureBanner').classList.add('visible');
+  }
+}
+
+function renderBeliefPanel(step) {
+  const body = document.getElementById('beliefBody');
+  body.innerHTML = renderState(step.belief, step.changedKeys, false);
+}
+
+function renderRealityPanel(step) {
+  const body = document.getElementById('realityBody');
+  body.innerHTML = renderState(step.reality, step.changedKeys, step.drift);
+}
+
+function renderState(state, changedKeys, showChanges) {
+  if (!state) return '<span style="color:var(--muted); font-style:italic">—</span>';
+  let html = '';
+  for (const [key, val] of Object.entries(state)) {
+    const isChanged = showChanges && changedKeys && changedKeys.includes(key);
+    html += '<div class="state-row' + (isChanged ? ' highlight' : '') + '">';
+    html += '<span class="state-key">' + key + ':</span> ';
+    html += '<span class="state-val' + (isChanged ? ' changed' : ' ok') + '">' + val + '</span>';
+    if (isChanged) html += ' <span style="color:var(--red); font-size:10px;">← changed</span>';
+    html += '</div>';
+  }
+  return html;
+}
+
+function setDrift(pct, label, cls) {
+  const fill = document.getElementById('driftFill');
+  const status = document.getElementById('driftStatus');
+  fill.style.width = pct + '%';
+  fill.style.background = cls === 'danger' ? 'var(--red)' : cls === 'warn' ? 'var(--yellow)' : 'var(--green)';
+  status.textContent = label;
+  status.className = 'drift-status' + (cls ? ' ' + cls : '');
+}
+
+function stepForward() {
+  const scenario = SCENARIOS[currentScenario];
+  if (currentStep + 1 >= scenario.steps.length) return;
+  applyStep(currentStep + 1, true);
+}
+
+function togglePlay() {
+  if (playing) {
+    playing = false;
+    if (playTimer) clearTimeout(playTimer);
+    document.getElementById('playBtn').textContent = '▶ Play';
+  } else {
+    playing = true;
+    document.getElementById('playBtn').textContent = '⏸ Pause';
+    scheduleNext();
+  }
+}
+
+function scheduleNext() {
+  if (!playing) return;
+  const scenario = SCENARIOS[currentScenario];
+  if (currentStep + 1 >= scenario.steps.length) {
+    playing = false;
+    document.getElementById('playBtn').textContent = '▶ Play';
+    return;
+  }
+  playTimer = setTimeout(() => {
+    stepForward();
+    scheduleNext();
+  }, speed);
+}
+
+function setSpeed(ms, btn) {
+  speed = ms;
+  document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+// Init
+loadScenario(0);
+</script>
+</body>
+</html>
