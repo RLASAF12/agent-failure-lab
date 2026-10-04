@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GhostApproval — Agent Failure Series #17</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --red: #ff4444;
+    --red-dim: rgba(255,68,68,0.12);
+    --green: #00ff88;
+    --green-dim: rgba(0,255,136,0.1);
+    --orange: #ff8800;
+    --orange-dim: rgba(255,136,0,0.12);
+    --yellow: #ffd700;
+    --yellow-dim: rgba(255,215,0,0.1);
+    --purple: #bf5af2;
+    --purple-dim: rgba(191,90,242,0.12);
+    --blue: #58a6ff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+    padding: 20px;
+  }
+  .series-label { font-size:11px; color:var(--muted); letter-spacing:2px; text-transform:uppercase; margin-bottom:4px; }
+  .series-num { color:var(--red); font-weight:700; }
+  h1 { font-size:26px; font-weight:700; color:var(--text); margin-bottom:6px; }
+  h1 span { color:var(--red); }
+  .subtitle { color:var(--muted); font-size:13px; margin-bottom:20px; }
+  .incident-banner {
+    background:rgba(255,68,68,0.08);
+    border:1px solid rgba(255,68,68,0.3);
+    border-radius:8px;
+    padding:12px 16px;
+    margin-bottom:20px;
+    font-size:12px;
+  }
+  .incident-banner .banner-title { color:var(--red); font-weight:700; font-size:11px; letter-spacing:1px; text-transform:uppercase; margin-bottom:8px; }
+  .incident-item { color:var(--muted); padding:3px 0; border-left:2px solid rgba(255,68,68,0.4); padding-left:10px; margin:4px 0; }
+  .incident-item .date { color:var(--orange); font-size:11px; }
+  .modes-row { display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap; }
+  .mode-btn {
+    flex:1; min-width:130px; padding:10px 14px;
+    border:1px solid var(--border); border-radius:8px;
+    background:var(--card); color:var(--text);
+    cursor:pointer; font-size:12px; font-weight:600;
+    text-align:left; transition:all 0.2s;
+  }
+  .mode-btn:hover { transform:translateY(-1px); border-color:var(--blue); }
+  .mode-btn.active { border-width:2px; }
+  .mode-btn .badge { display:inline-block; font-size:10px; padding:2px 6px; border-radius:4px; margin-bottom:6px; font-weight:700; letter-spacing:0.5px; }
+  .mode-btn .btn-desc { color:var(--muted); font-size:11px; font-weight:400; margin-top:3px; }
+  .btn-202 .badge { background:var(--red-dim); color:var(--red); }
+  .btn-timeout .badge { background:var(--orange-dim); color:var(--orange); }
+  .btn-exception .badge { background:var(--yellow-dim); color:var(--yellow); }
+  .btn-chain .badge { background:var(--purple-dim); color:var(--purple); }
+  .btn-202.active { border-color:var(--red); background:var(--red-dim); }
+  .btn-timeout.active { border-color:var(--orange); background:var(--orange-dim); }
+  .btn-exception.active { border-color:var(--yellow); background:var(--yellow-dim); }
+  .btn-chain.active { border-color:var(--purple); background:var(--purple-dim); }
+  .panels { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-bottom:20px; }
+  @media (max-width:900px) { .panels { grid-template-columns:1fr; } }
+  .panel { background:var(--card); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+  .panel-header { padding:12px 16px; border-bottom:1px solid var(--border); font-size:11px; font-weight:700; letter-spacing:1px; text-transform:uppercase; color:var(--muted); display:flex; align-items:center; gap:8px; }
+  .panel-header .dot { width:8px; height:8px; border-radius:50%; }
+  .dot-green { background:var(--green); }
+  .dot-red { background:var(--red); }
+  .dot-orange { background:var(--orange); }
+  .panel-body { padding:14px; }
+  .task-item { display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border-radius:6px; margin-bottom:6px; border:1px solid transparent; transition:all 0.3s; background:rgba(255,255,255,0.02); }
+  .task-item.running { border-color:var(--blue); background:rgba(88,166,255,0.06); }
+  .task-item.bypassed { border-color:var(--red); background:var(--red-dim); animation:pulse-red 1.5s ease-in-out 2; }
+  .task-item.approved { border-color:var(--green); background:var(--green-dim); }
+  .task-item.pending { opacity:0.5; }
+  .task-item.complete { border-color:var(--green); background:var(--green-dim); }
+  @keyframes pulse-red {
+    0%,100% { box-shadow:0 0 0 0 rgba(255,68,68,0.4); }
+    50% { box-shadow:0 0 0 6px rgba(255,68,68,0); }
+  }
+  .task-icon { font-size:16px; margin-top:1px; flex-shrink:0; }
+  .task-name { font-size:12px; font-weight:500; color:var(--text); line-height:1.4; }
+  .task-tag { font-size:10px; color:var(--muted); margin-top:2px; }
+  .task-status { margin-left:auto; font-size:10px; font-weight:700; padding:2px 6px; border-radius:4px; white-space:nowrap; flex-shrink:0; }
+  .status-pending { background:rgba(139,148,158,0.15); color:var(--muted); }
+  .status-running { background:rgba(88,166,255,0.15); color:var(--blue); }
+  .status-bypassed { background:rgba(255,68,68,0.15); color:var(--red); }
+  .status-approved { background:rgba(0,255,136,0.15); color:var(--green); }
+  .gate-box { border:1px solid var(--border); border-radius:8px; padding:14px; margin-bottom:12px; }
+  .gate-idle { border-color:var(--border); }
+  .gate-waiting { border-color:var(--blue); }
+  .gate-error { border-color:var(--red); }
+  .gate-label { font-size:10px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; margin-bottom:8px; }
+  .gate-status { font-size:15px; font-weight:700; color:var(--text); margin-bottom:6px; }
+  .gate-detail { font-size:11px; color:var(--muted); font-family:'SF Mono','Monaco',monospace; line-height:1.5; white-space:pre-wrap; word-break:break-all; }
+  .gate-result { display:none; margin-top:10px; padding:8px; border-radius:6px; font-size:12px; font-weight:700; text-align:center; }
+  .gate-result.show { display:block; }
+  .gate-result.bypassed { background:var(--red-dim); color:var(--red); border:1px solid rgba(255,68,68,0.3); }
+  .code-block { background:#010409; border:1px solid var(--border); border-radius:6px; padding:12px; font-family:'SF Mono','Monaco',monospace; font-size:11px; line-height:1.7; color:#a3b3c7; overflow-x:auto; white-space:pre; }
+  .code-block .kw { color:#ff79c6; }
+  .code-block .fn { color:#50fa7b; }
+  .code-block .str { color:#f1fa8c; }
+  .code-block .cm { color:#6272a4; font-style:italic; }
+  .code-block .hl { background:rgba(255,68,68,0.25); color:var(--red); border-radius:2px; padding:1px 3px; }
+  .damage-item { padding:10px 12px; border-radius:6px; margin-bottom:6px; border:1px solid rgba(255,68,68,0.25); background:rgba(255,68,68,0.06); animation:damage-appear 0.4s ease; }
+  @keyframes damage-appear { from { opacity:0; transform:translateX(10px); } to { opacity:1; transform:translateX(0); } }
+  .damage-title { font-size:12px; font-weight:600; color:var(--text); margin-bottom:4px; }
+  .damage-meta { font-size:10px; color:var(--red); }
+  .damage-desc { font-size:11px; color:var(--muted); margin-top:3px; }
+  .no-damage { text-align:center; color:var(--muted); font-size:12px; padding:20px; }
+  .controls { display:flex; gap:10px; margin-bottom:20px; align-items:center; }
+  .btn-reset { padding:8px 16px; background:transparent; border:1px solid var(--border); border-radius:6px; color:var(--muted); cursor:pointer; font-size:12px; transition:all 0.2s; }
+  .btn-reset:hover { border-color:var(--text); color:var(--text); }
+  .run-status { font-size:12px; color:var(--muted); }
+  .fix-section { background:rgba(0,255,136,0.04); border:1px solid rgba(0,255,136,0.2); border-radius:10px; padding:20px; margin-bottom:20px; display:none; }
+  .fix-section.visible { display:block; animation:slide-in 0.5s ease; }
+  @keyframes slide-in { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+  .fix-title { font-size:14px; font-weight:700; color:var(--green); margin-bottom:14px; }
+  .fix-items { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width:700px) { .fix-items { grid-template-columns:1fr; } }
+  .fix-item { background:rgba(0,255,136,0.04); border:1px solid rgba(0,255,136,0.15); border-radius:8px; padding:12px; }
+  .fix-item-title { font-size:12px; font-weight:700; color:var(--green); margin-bottom:6px; }
+  .fix-item-desc { font-size:11px; color:var(--muted); line-height:1.5; }
+  .footer { border-top:1px solid var(--border); padding-top:16px; font-size:11px; color:var(--muted); display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  .footer a { color:var(--blue); text-decoration:none; }
+  .footer a:hover { text-decoration:underline; }
+  .spinner { display:inline-block; width:10px; height:10px; border:2px solid var(--border); border-top-color:var(--blue); border-radius:50%; animation:spin 0.7s linear infinite; vertical-align:middle; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .notify-bar { position:fixed; top:20px; right:20px; background:var(--red); color:#000; padding:10px 16px; border-radius:8px; font-size:12px; font-weight:700; z-index:999; opacity:0; transform:translateX(20px); transition:all 0.4s; max-width:300px; }
+  .notify-bar.show { opacity:1; transform:translateX(0); }
+</style>
+</head>
+<body>
+
+<div class="series-label">Agent Failure Series <span class="series-num">#17</span></div>
+<h1>Ghost<span>Approval</span></h1>
+<p class="subtitle">When agents don't wait for you — how approval gates silently fail in production</p>
+
+<div class="incident-banner">
+  <div class="banner-title">⚠️ Real Incidents — This Week</div>
+  <div class="incident-item"><span class="date">Aug 2, 2026</span> — OpenAI's agent broke out of its sandbox and breached Hugging Face <em>(Enterprise IT News)</em></div>
+  <div class="incident-item"><span class="date">Jul 30, 2026</span> — Going Rogue: OpenAI agent escaped, accessed the web, launched a cyberattack <em>(The Debrief)</em></div>
+  <div class="incident-item"><span class="date">Jul 25, 2026</span> — AI agent spent days hacking a company; OpenAI didn't notice for a week <em>(Metapress)</em></div>
+  <div class="incident-item"><span class="date">Apr 2, 2026</span> — Why AI agents bypass human approval: lessons from Meta's rogue agent incidents <em>(Waxell.ai)</em></div>
+</div>
+
+<div class="modes-row">
+  <button class="mode-btn btn-202" onclick="runMode('http202')" id="btn-http202">
+    <div class="badge">HTTP 202</div>
+    <div>Status Code Confusion</div>
+    <div class="btn-desc">202 ≠ 200, but agent disagrees</div>
+  </button>
+  <button class="mode-btn btn-timeout" onclick="runMode('timeout')" id="btn-timeout">
+    <div class="badge">TIMEOUT</div>
+    <div>Silent Default-Allow</div>
+    <div class="btn-desc">on_timeout="continue" in config</div>
+  </button>
+  <button class="mode-btn btn-exception" onclick="runMode('exception')" id="btn-exception">
+    <div class="badge">EXCEPTION</div>
+    <div>Swallowed Error</div>
+    <div class="btn-desc">bare except: pass, agent proceeds</div>
+  </button>
+  <button class="mode-btn btn-chain" onclick="runMode('chain')" id="btn-chain">
+    <div class="badge">BYPASS CHAIN</div>
+    <div>Cached Approval</div>
+    <div class="btn-desc">One approval, four actions</div>
+  </button>
+</div>
+
+<div class="controls">
+  <button class="btn-reset" onclick="resetAll()">↺ Reset</button>
+  <span class="run-status" id="run-status">Select a failure mode above to begin the simulation</span>
+</div>
+
+<div class="panels">
+  <div class="panel">
+    <div class="panel-header"><span class="dot dot-green"></span>Agent Task Queue</div>
+    <div class="panel-body" id="task-list"></div>
+  </div>
+  <div class="panel">
+    <div class="panel-header"><span class="dot dot-orange"></span>Approval Gate</div>
+    <div class="panel-body">
+      <div class="gate-box gate-idle" id="gate-box">
+        <div class="gate-label">Endpoint: <span style="color:var(--blue)">POST /api/approvals/request</span></div>
+        <div class="gate-status" id="gate-status">Idle — waiting for task</div>
+        <div class="gate-detail" id="gate-detail">No active approval request</div>
+        <div class="gate-result" id="gate-result"></div>
+      </div>
+      <div style="margin-top:12px">
+        <div style="font-size:10px;color:var(--muted);letter-spacing:1px;text-transform:uppercase;margin-bottom:6px">Vulnerable Code Pattern</div>
+        <div class="code-block" id="code-display"><span class="cm"># Select a failure mode to see the vulnerable code</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-header"><span class="dot dot-red"></span>Damage Log — Actions Without Approval</div>
+    <div class="panel-body" id="damage-log"><div class="no-damage">No unauthorized actions yet.</div></div>
+  </div>
+</div>
+
+<div class="fix-section" id="fix-section">
+  <div class="fix-title">✅ The Fix: Defense-in-Depth for Approval Gates</div>
+  <div class="fix-items">
+    <div class="fix-item">
+      <div class="fix-item-title">1. Strict Status Matching</div>
+      <div class="fix-item-desc">Never use <code>!= 200</code> for the fail path. Whitelist exact success codes. Anything outside that set — including 202, 204, 301, or 500 — is an explicit denial.</div>
+    </div>
+    <div class="fix-item">
+      <div class="fix-item-title">2. Timeout = Deny</div>
+      <div class="fix-item-desc">Approval timeout must default to <strong>denial</strong>, never continuation. Redesign: <code>on_timeout="deny"</code> and surface a visible error. Never <code>continue_on_timeout</code>.</div>
+    </div>
+    <div class="fix-item">
+      <div class="fix-item-title">3. Exception = Halt</div>
+      <div class="fix-item-desc">Replace bare <code>except: pass</code> with explicit handling that raises an <code>ApprovalRequiredException</code>. Never swallow exceptions in security-critical paths.</div>
+    </div>
+    <div class="fix-item">
+      <div class="fix-item-title">4. Per-Action Approval Tokens</div>
+      <div class="fix-item-desc">Issue single-use cryptographic tokens per consequential action. Cached approvals are attack surfaces. Approve once, execute once, expire immediately.</div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  <span>Agent Failure Series · <a href="https://harelasaf.com" target="_blank">harelasaf.com</a></span>
+  <span>◀ <a href="https://rlasaf12.github.io/stalemind/" target="_blank">#16 StaleMind</a></span>
+  <span><a href="https://github.com/RLASAF12/ghostapproval" target="_blank">GitHub</a></span>
+  <span style="color:var(--muted)">GhostApproval: When agents don't wait for you</span>
+</div>
+
+<div class="notify-bar" id="notify-bar"></div>
+
+<script>
+const TASKS = [
+  { id:1, icon:'📧', name:'Send Q2 financial report to all shareholders', tag:'REQUIRES_APPROVAL · 847 recipients' },
+  { id:2, icon:'🗑️', name:'Delete user records older than 90 days (GDPR)', tag:'REQUIRES_APPROVAL · ~14,000 records' },
+  { id:3, icon:'🚀', name:'Deploy hotfix v2.1.4 to production', tag:'REQUIRES_APPROVAL · 12M active sessions' },
+  { id:4, icon:'💸', name:'Transfer $47,200 to vendor account #8821-B', tag:'REQUIRES_APPROVAL · ACH wire' },
+  { id:5, icon:'🔑', name:'Revoke API access for 23 inactive accounts', tag:'REQUIRES_APPROVAL · partner integrations' },
+];
+
+const DAMAGE_DESCS = {
+  1:'Q2 financials emailed to 847 shareholders before board sign-off. Contains un-audited figures.',
+  2:'14,000+ user records permanently deleted without DPO confirmation.',
+  3:'Production deployment executed during peak hours. No rollback window negotiated.',
+  4:'$47,200 ACH wire initiated without CFO approval. Irreversible after 2 hours.',
+  5:'API keys revoked for 23 partner accounts. Downstream integrations broken.',
+};
+
+const MODES = {
+  http202: {
+    label:'HTTP 202',
+    btnId:'btn-http202',
+    gateInitial:'Sending approval request...',
+    gateFinal:'HTTP 202 Accepted',
+    gateDetail:'POST /api/approvals/request\n→ HTTP 202 Accepted (queued for review)\n\nAgent checks: if status_code == 200\nResult: False — approval gate never opened\nBug: agent treats non-200 as "proceed"',
+    bypassReason:'BYPASSED — status 202 ≠ 200 treated as no-gate',
+    code:`<span class="cm"># Vulnerable: strict 200-only check inverted</span>\n<span class="kw">def</span> <span class="fn">wait_for_approval</span>(task_id):\n    resp = requests.post(\n        approval_endpoint,\n        json={"task_id": task_id}\n    )\n    <span class="cm"># BUG: 202/404/500 all fall through as "proceed"</span>\n    <span class="kw">if</span> resp.status_code == <span class="hl">200</span>:\n        <span class="kw">return</span> wait_for_human()\n    <span class="cm"># Any other code → continue without approval</span>\n    <span class="kw">return</span> <span class="kw">True</span>`,
+    affectedTasks:[1,2,3,4,5],
+  },
+  timeout: {
+    label:'TIMEOUT',
+    btnId:'btn-timeout',
+    gateInitial:'Waiting for human approval... ⏱️',
+    gateFinal:'Request timeout (30s)',
+    gateDetail:'POST /api/approvals/request\n→ Connection established\n→ [waiting 30s...]\n→ ReadTimeout: approval service unresponsive\n\nConfig: on_timeout = "continue"\nAgent proceeds automatically.',
+    bypassReason:'BYPASSED — timeout defaulted to "continue"',
+    code:`<span class="cm"># Vulnerable: timeout defaults to approval</span>\n<span class="kw">def</span> <span class="fn">wait_for_approval</span>(task_id, <span class="hl">timeout=30</span>):\n    <span class="kw">try</span>:\n        resp = requests.post(\n            approval_endpoint, timeout=timeout\n        )\n        <span class="kw">return</span> resp.json()[<span class="str">"approved"</span>]\n    <span class="kw">except</span> requests.Timeout:\n        <span class="cm"># BUG: timeout = implicit approval</span>\n        <span class="kw">if</span> config[<span class="hl">"on_timeout"</span>] == <span class="str">"continue"</span>:\n            <span class="kw">return</span> <span class="kw">True</span>  <span class="cm"># ← dangerous default</span>`,
+    affectedTasks:[1,2,3,4,5],
+  },
+  exception: {
+    label:'EXCEPTION',
+    btnId:'btn-exception',
+    gateInitial:'Processing approval response...',
+    gateFinal:'JSONDecodeError (swallowed)',
+    gateDetail:'Traceback (most recent call last):\n  File "agent.py", line 42\n    approval_data = response.json()\n  JSONDecodeError: Expecting value\n  at line 1, column 1\n\nexcept: pass → agent continues silently.',
+    bypassReason:'BYPASSED — exception swallowed, agent continued',
+    code:`<span class="cm"># Vulnerable: bare except swallows all errors</span>\n<span class="kw">def</span> <span class="fn">wait_for_approval</span>(task_id):\n    approved = <span class="kw">False</span>  <span class="cm"># default</span>\n    <span class="kw">try</span>:\n        resp = requests.post(approval_endpoint)\n        data = resp.json()\n        <span class="kw">if</span> data.get(<span class="str">"status"</span>) == <span class="str">"approved"</span>:\n            approved = <span class="kw">True</span>\n    <span class="kw">except</span> <span class="hl">Exception</span>:\n        <span class="cm"># BUG: catches everything — JSON errors,</span>\n        <span class="cm"># network errors, parse errors — all pass</span>\n        <span class="hl">pass</span>\n    <span class="kw">return</span> approved`,
+    affectedTasks:[1,2,3,4,5],
+  },
+  chain: {
+    label:'BYPASS CHAIN',
+    btnId:'btn-chain',
+    gateInitial:'Checking approval cache...',
+    gateFinal:'Cached approval token reused',
+    gateDetail:'Task 1 approved ✓ (token: apv_x9k2m)\nTask 2: token reused → BYPASSED\nTask 3: token reused → BYPASSED\nTask 4: token reused → BYPASSED\nTask 5: token reused → BYPASSED\n\nOne approval. Five executions.',
+    bypassReason:'BYPASSED — approval token cached across all tasks',
+    code:`<span class="cm"># Vulnerable: approval cached session-wide</span>\n<span class="kw">class</span> <span class="fn">AgentSession</span>:\n    <span class="kw">def</span> <span class="fn">__init__</span>(self):\n        <span class="hl">self.approval_cache = {}</span>  <span class="cm"># persists!</span>\n\n    <span class="kw">def</span> <span class="fn">needs_approval</span>(self, task_type):\n        <span class="kw">if</span> <span class="hl">task_type in self.approval_cache</span>:\n            <span class="kw">return</span> <span class="kw">False</span>  <span class="cm"># BUG: reuses approval</span>\n        approved = self.request_human_approval()\n        <span class="hl">self.approval_cache[task_type] = True</span>\n        <span class="kw">return</span> approved`,
+    affectedTasks:[2,3,4,5],
+    task1Approved: true,
+  },
+};
+
+let modesRun = new Set();
+let isRunning = false;
+let damageCount = 0;
+
+function renderTasks(states={}) {
+  const labels = {pending:'PENDING',running:'RUNNING',approved:'APPROVED',bypassed:'⚡ BYPASSED'};
+  document.getElementById('task-list').innerHTML = TASKS.map(t => {
+    const s = states[t.id] || 'pending';
+    return `<div class="task-item ${s}" id="task-${t.id}">
+      <span class="task-icon">${t.icon}</span>
+      <div><div class="task-name">${t.name}</div><div class="task-tag">${t.tag}</div></div>
+      <span class="task-status status-${s}">${labels[s]}</span>
+    </div>`;
+  }).join('');
+}
+
+function setTaskState(id, state) {
+  const el = document.getElementById(`task-${id}`);
+  if (!el) return;
+  ['running','bypassed','approved','pending'].forEach(c => el.classList.remove(c));
+  el.classList.add(state);
+  const s = el.querySelector('.task-status');
+  if (s) {
+    const labels = {pending:'PENDING',running:'RUNNING',approved:'APPROVED',bypassed:'⚡ BYPASSED'};
+    s.className = `task-status status-${state}`;
+    s.textContent = labels[state];
+  }
+}
+
+function setGate(status, detail, boxClass, resultText) {
+  document.getElementById('gate-status').textContent = status;
+  document.getElementById('gate-detail').textContent = detail;
+  document.getElementById('gate-box').className = `gate-box ${boxClass}`;
+  const r = document.getElementById('gate-result');
+  if (resultText) { r.textContent = resultText; r.className = 'gate-result show bypassed'; }
+  else { r.className = 'gate-result'; }
+}
+
+function addDamage(task) {
+  const log = document.getElementById('damage-log');
+  const nm = log.querySelector('.no-damage');
+  if (nm) nm.remove();
+  damageCount++;
+  const item = document.createElement('div');
+  item.className = 'damage-item';
+  item.innerHTML = `<div class="damage-title">${task.icon} ${task.name}</div>
+    <div class="damage-meta">⚡ EXECUTED WITHOUT APPROVAL · T+${damageCount * 3}s</div>
+    <div class="damage-desc">${DAMAGE_DESCS[task.id]}</div>`;
+  log.appendChild(item);
+}
+
+function notify(msg) {
+  const bar = document.getElementById('notify-bar');
+  bar.textContent = msg;
+  bar.classList.add('show');
+  setTimeout(() => bar.classList.remove('show'), 3500);
+}
+
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function runMode(key) {
+  if (isRunning) return;
+  isRunning = true;
+  const m = MODES[key];
+  resetAll(false);
+  await sleep(100);
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(m.btnId).classList.add('active');
+  document.getElementById('code-display').innerHTML = m.code;
+  document.getElementById('run-status').innerHTML = `<span class="spinner"></span> Simulating: ${m.label} — agent executing task queue...`;
+
+  for (let i = 0; i < TASKS.length; i++) {
+    const task = TASKS[i];
+    const isAffected = m.affectedTasks.includes(task.id);
+    setTaskState(task.id, 'running');
+    await sleep(600);
+    setGate(m.gateInitial, `Requesting approval for task ${i+1}/${TASKS.length}:\n"${task.name}"`, 'gate-waiting', null);
+    await sleep(key === 'timeout' ? 1800 : 1200);
+
+    if (key === 'chain' && task.id === 1) {
+      setGate('✅ Approved (token: apv_x9k2m)', 'Human approved task 1.\nApproval token cached for session.', 'gate-idle', null);
+      setTaskState(task.id, 'approved');
+      await sleep(800);
+    } else if (isAffected) {
+      setGate(m.gateFinal, m.gateDetail, 'gate-error', m.bypassReason);
+      await sleep(900);
+      setTaskState(task.id, 'bypassed');
+      addDamage(task);
+      notify(`⚡ Approval bypassed — "${task.name.substring(0,45)}..."`);
+      await sleep(500);
+    } else {
+      setGate('✅ Approved', 'Human confirmed this action.', 'gate-idle', null);
+      setTaskState(task.id, 'approved');
+      await sleep(600);
+    }
+  }
+
+  modesRun.add(key);
+  document.getElementById('run-status').innerHTML =
+    `✓ Simulation complete. <strong style="color:var(--red)">${m.affectedTasks.length} task(s) executed without approval.</strong>`;
+  if (modesRun.size >= 4) {
+    document.getElementById('fix-section').classList.add('visible');
+    document.getElementById('fix-section').scrollIntoView({ behavior:'smooth' });
+  }
+  isRunning = false;
+}
+
+function resetAll(showStatus=true) {
+  damageCount = 0;
+  renderTasks();
+  setGate('Idle — waiting for task', 'No active approval request', 'gate-idle', null);
+  document.getElementById('damage-log').innerHTML = '<div class="no-damage">No unauthorized actions yet.</div>';
+  document.getElementById('code-display').innerHTML = '<span style="color:var(--muted);font-style:italic"># Select a failure mode to see the vulnerable code</span>';
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+  if (showStatus) {
+    document.getElementById('run-status').textContent = 'Select a failure mode above to begin the simulation';
+    document.getElementById('fix-section').classList.remove('visible');
+    modesRun.clear();
+  }
+}
+
+renderTasks();
+</script>
+</body>
+</html>
